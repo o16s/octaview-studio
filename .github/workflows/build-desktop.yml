@@ -12,9 +12,15 @@ jobs:
         include:
           - os: macos-latest
             build-cmd: build:mac
+            artifact-name: desktop-mac-arm64
+            artifact-pattern: "desktop/dist/*.dmg"
+          - os: macos-latest
+            build-cmd: build:mac-x64
+            artifact-name: desktop-mac-x64
             artifact-pattern: "desktop/dist/*.dmg"
           - os: windows-latest
             build-cmd: build:win
+            artifact-name: desktop-windows
             artifact-pattern: "desktop/dist/*.exe"
     runs-on: ${{ matrix.os }}
     steps:
@@ -48,5 +54,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.os }}
+          name: ${{ matrix.artifact-name }}
           path: ${{ matrix.artifact-pattern }}
