@@ -14,6 +14,7 @@ import {
 } from "@foxglove/rostime";
 import {
   CompressedImage,
+  CompressedVideo,
   RawImage,
   ImageAnnotations as FoxgloveImageAnnotations,
 } from "@foxglove/schemas";
@@ -29,6 +30,7 @@ import {
 } from "@foxglove/studio-base/panels/ThreeDeeRender/renderables/Images/ImageTypes";
 import {
   normalizeCompressedImage,
+  normalizeCompressedVideo,
   normalizeRawImage,
   normalizeRosCompressedImage,
   normalizeRosImage,
@@ -200,6 +202,10 @@ export class MessageHandler implements IMessageHandler {
 
   public handleCompressedImage = (messageEvent: PartialMessageEvent<CompressedImage>): void => {
     this.handleImage(messageEvent, normalizeCompressedImage(messageEvent.message));
+  };
+
+  public handleCompressedVideo = (messageEvent: PartialMessageEvent<CompressedVideo>): void => {
+    this.handleImage(messageEvent, normalizeCompressedVideo(messageEvent.message));
   };
 
   protected handleImage(message: PartialMessageEvent<AnyImage>, image: AnyImage): void {
@@ -449,6 +455,7 @@ export interface IMessageHandler {
   handleRosCompressedImage: (messageEvent: PartialMessageEvent<RosCompressedImage>) => void;
   handleRawImage: (messageEvent: PartialMessageEvent<RawImage>) => void;
   handleCompressedImage: (messageEvent: PartialMessageEvent<CompressedImage>) => void;
+  handleCompressedVideo: (messageEvent: PartialMessageEvent<CompressedVideo>) => void;
   handleCameraInfo: (message: PartialMessageEvent<CameraInfo>) => void;
   handleAnnotations: (
     messageEvent: MessageEvent<FoxgloveImageAnnotations | RosImageMarker | RosImageMarkerArray>,

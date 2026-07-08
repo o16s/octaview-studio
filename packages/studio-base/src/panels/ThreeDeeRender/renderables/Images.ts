@@ -9,7 +9,7 @@ import { MultiMap, filterMap } from "@foxglove/den/collection";
 import { PinholeCameraModel } from "@foxglove/den/image";
 import Logger from "@foxglove/log";
 import { toNanoSec } from "@foxglove/rostime";
-import { CameraCalibration, CompressedImage, RawImage } from "@foxglove/schemas";
+import { CameraCalibration, CompressedImage, CompressedVideo, RawImage } from "@foxglove/schemas";
 import { SettingsTreeAction, SettingsTreeFields } from "@foxglove/studio";
 import { ALL_SUPPORTED_IMAGE_SCHEMAS } from "@foxglove/studio-base/panels/ThreeDeeRender/renderables/ImageMode/ImageMode";
 
@@ -21,6 +21,7 @@ import {
 import { ALL_CAMERA_INFO_SCHEMAS, AnyImage } from "./Images/ImageTypes";
 import {
   normalizeCompressedImage,
+  normalizeCompressedVideo,
   normalizeRawImage,
   normalizeRosCompressedImage,
   normalizeRosImage,
@@ -33,6 +34,7 @@ import { SettingsTreeEntry } from "../SettingsManager";
 import {
   CAMERA_CALIBRATION_DATATYPES,
   COMPRESSED_IMAGE_DATATYPES,
+  COMPRESSED_VIDEO_DATATYPES,
   RAW_IMAGE_DATATYPES,
 } from "../foxglove";
 import {
@@ -129,6 +131,14 @@ export class Images extends SceneExtension<ImageRenderable> {
         schemaNames: COMPRESSED_IMAGE_DATATYPES,
         subscription: {
           handler: this.#handleCompressedImage,
+          filterQueue: onlyLastByTopicMessage,
+        },
+      },
+      {
+        type: "schema",
+        schemaNames: COMPRESSED_VIDEO_DATATYPES,
+        subscription: {
+          handler: this.#handleCompressedVideo,
           filterQueue: onlyLastByTopicMessage,
         },
       },
@@ -298,6 +308,10 @@ export class Images extends SceneExtension<ImageRenderable> {
 
   #handleCompressedImage = (messageEvent: PartialMessageEvent<CompressedImage>): void => {
     this.handleImage(messageEvent, normalizeCompressedImage(messageEvent.message));
+  };
+
+  #handleCompressedVideo = (messageEvent: PartialMessageEvent<CompressedVideo>): void => {
+    this.handleImage(messageEvent, normalizeCompressedVideo(messageEvent.message));
   };
 
   protected handleImage = (messageEvent: PartialMessageEvent<AnyImage>, image: AnyImage): void => {

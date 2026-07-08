@@ -17,6 +17,7 @@ import { projectPixel } from "@foxglove/studio-base/panels/ThreeDeeRender/render
 import { RosValue } from "@foxglove/studio-base/players/types";
 
 import { AnyImage } from "./ImageTypes";
+import { H264Decoder, NoFrameError, isVideoFormat } from "./H264Decoder";
 import { decodeCompressedImageToBitmap } from "./decodeImage";
 import { CameraInfo } from "../../ros";
 import { DECODE_IMAGE_ERR_KEY, IMAGE_TOPIC_PATH } from "../ImageMode/constants";
@@ -72,6 +73,7 @@ export class ImageRenderable extends Renderable<ImageUserData> {
 
   #decodedImage?: ImageBitmap | ImageData;
   protected decoder?: WorkerImageDecoder;
+  #videoDecoder?: H264Decoder;
   #receivedImageSequenceNumber = 0;
   #displayedImageSequenceNumber = 0;
   #showingErrorImage = false;
@@ -96,6 +98,7 @@ export class ImageRenderable extends Renderable<ImageUserData> {
     this.userData.material?.dispose();
     this.userData.geometry?.dispose();
     this.decoder?.terminate();
+    this.#videoDecoder?.close();
     super.dispose();
   }
 
@@ -198,6 +201,11 @@ export class ImageRenderable extends Renderable<ImageUserData> {
         this.renderer.queueAnimationFrame();
       })
       .catch((err) => {
+        // NoFrameError means the message contained only parameter sets (SPS/PPS)
+        // with no decodable frame - this is expected for H.264 streams
+        if (err instanceof NoFrameError) {
+          return;
+        }
         log.error(err);
         if (this.isDisposed()) {
           return;
@@ -232,6 +240,11 @@ export class ImageRenderable extends Renderable<ImageUserData> {
     resizeWidth?: number,
   ): Promise<ImageBitmap | ImageData> {
     if ("format" in image) {
+      if ("timestamp" in image && isVideoFormat(image.format)) {
+        const tsNanos =
+          BigInt(image.timestamp.sec) * 1_000_000_000n + BigInt(image.timestamp.nsec);
+        return await (this.#videoDecoder ??= new H264Decoder()).decode(image.data, tsNanos);
+      }
       return await decodeCompressedImageToBitmap(image, resizeWidth);
     }
     return await (this.decoder ??= new WorkerImageDecoder()).decode(image, this.userData.settings);

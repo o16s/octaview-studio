@@ -64,6 +64,7 @@ import { SettingsTreeEntry } from "../../SettingsManager";
 import {
   CAMERA_CALIBRATION_DATATYPES,
   COMPRESSED_IMAGE_DATATYPES,
+  COMPRESSED_VIDEO_DATATYPES,
   RAW_IMAGE_DATATYPES,
 } from "../../foxglove";
 import {
@@ -108,6 +109,7 @@ export const ALL_SUPPORTED_IMAGE_SCHEMAS = new Set([
   ...ROS_COMPRESSED_IMAGE_DATATYPES,
   ...RAW_IMAGE_DATATYPES,
   ...COMPRESSED_IMAGE_DATATYPES,
+  ...COMPRESSED_VIDEO_DATATYPES,
 ]);
 
 const SUPPORTED_RAW_IMAGE_SCHEMAS = new Set([...RAW_IMAGE_DATATYPES, ...ROS_IMAGE_DATATYPES]);
@@ -287,6 +289,15 @@ export class ImageMode
         schemaNames: COMPRESSED_IMAGE_DATATYPES,
         subscription: {
           handler: this.messageHandler.handleCompressedImage,
+          shouldSubscribe: this.imageShouldSubscribe,
+          filterQueue: this.#filterMessageQueue.bind(this),
+        },
+      },
+      {
+        type: "schema",
+        schemaNames: COMPRESSED_VIDEO_DATATYPES,
+        subscription: {
+          handler: this.messageHandler.handleCompressedVideo,
           shouldSubscribe: this.imageShouldSubscribe,
           filterQueue: this.#filterMessageQueue.bind(this),
         },
