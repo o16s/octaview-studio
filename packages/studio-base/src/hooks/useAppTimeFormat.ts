@@ -8,7 +8,7 @@ import { useCallback, useMemo } from "react";
 import { Time } from "@foxglove/studio";
 import { AppSetting } from "@foxglove/studio-base/AppSetting";
 import { TimeDisplayMethod } from "@foxglove/studio-base/types/panels";
-import { formatDate, formatTime } from "@foxglove/studio-base/util/formatTime";
+import { formatDate, formatTime, formatTime24 } from "@foxglove/studio-base/util/formatTime";
 import { formatTimeRaw } from "@foxglove/studio-base/util/time";
 
 import { useAppConfigurationValue } from "./useAppConfigurationValue";
@@ -27,7 +27,7 @@ export function useAppTimeFormat(): IAppTimeFormat {
   const [timeZone] = useAppConfigurationValue<string>(AppSetting.TIMEZONE);
 
   const effectiveFormat: TimeDisplayMethod = useMemo(
-    () => (timeFormat === "SEC" ? "SEC" : "TOD"),
+    () => (timeFormat === "SEC" ? "SEC" : timeFormat === "TOD24" ? "TOD24" : "TOD"),
     [timeFormat],
   );
 
@@ -42,6 +42,8 @@ export function useAppTimeFormat(): IAppTimeFormat {
     (stamp: Time) => {
       if (effectiveFormat === "TOD") {
         return formatTime(stamp, timeZone);
+      } else if (effectiveFormat === "TOD24") {
+        return formatTime24(stamp, timeZone);
       } else {
         return formatTimeRaw(stamp);
       }
@@ -51,7 +53,7 @@ export function useAppTimeFormat(): IAppTimeFormat {
 
   const formatDurationCallback = useCallback(
     (duration: Time) => {
-      if (effectiveFormat === "TOD") {
+      if (effectiveFormat === "TOD" || effectiveFormat === "TOD24") {
         return (
           moment.duration(duration.sec * 1e3).format("h:mm:ss", { trim: false }) +
           `.${duration.nsec}`

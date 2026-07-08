@@ -11,7 +11,7 @@ import {
   useMessagePipeline,
 } from "@foxglove/studio-base/components/MessagePipeline";
 import { useAppConfigurationValue, useAppTimeFormat } from "@foxglove/studio-base/hooks";
-import { format } from "@foxglove/studio-base/util/formatTime";
+import { format, format24 } from "@foxglove/studio-base/util/formatTime";
 import { formatTimeRaw, isAbsoluteTime } from "@foxglove/studio-base/util/time";
 
 const selectEndTime = (ctx: MessagePipelineContext) => ctx.playerState.activeData?.endTime;
@@ -33,11 +33,15 @@ export function EndTimestamp(): JSX.Element | ReactNull {
       timeRef.current.innerText = "";
       return;
     }
-    const timeOfDayString = format(endTime, timezone);
     const timeRawString = formatTimeRaw(endTime);
 
-    timeRef.current.innerText =
-      timeFormat === "SEC" || !isAbsoluteTime(endTime) ? timeRawString : timeOfDayString;
+    if (timeFormat === "SEC" || !isAbsoluteTime(endTime)) {
+      timeRef.current.innerText = timeRawString;
+    } else if (timeFormat === "TOD24") {
+      timeRef.current.innerText = format24(endTime, timezone);
+    } else {
+      timeRef.current.innerText = format(endTime, timezone);
+    }
   }, [endTime, timeFormat, timezone]);
 
   return (

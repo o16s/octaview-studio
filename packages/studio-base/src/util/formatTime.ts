@@ -32,6 +32,10 @@ export function format(stamp: Time, timezone?: string): string {
   return `${formatDate(stamp, timezone)} ${formatTime(stamp, timezone)}`;
 }
 
+export function format24(stamp: Time, timezone?: string): string {
+  return `${formatDate(stamp, timezone)} ${formatTime24(stamp, timezone)}`;
+}
+
 export function formatDate(stamp: Time, timezone?: string): string {
   if (stamp.sec < 0 || stamp.nsec < 0) {
     console.error("Times are not allowed to be negative");
@@ -46,6 +50,14 @@ export function formatTime(stamp: Time, timezone?: string): string {
     return "(invalid negative time)";
   }
   return moment.tz(toDate(stamp), timezone ?? moment.tz.guess()).format("h:mm:ss.SSS A z");
+}
+
+export function formatTime24(stamp: Time, timezone?: string): string {
+  if (stamp.sec < 0 || stamp.nsec < 0) {
+    console.error("Times are not allowed to be negative");
+    return "(invalid negative time)";
+  }
+  return moment.tz(toDate(stamp), timezone ?? moment.tz.guess()).format("HH:mm:ss.SSS z");
 }
 
 export function formatDuration(stamp: Time): string {

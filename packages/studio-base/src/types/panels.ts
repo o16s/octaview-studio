@@ -25,7 +25,7 @@ export type PanelConfig = {
   [key: string]: unknown;
 };
 
-export type TimeDisplayMethod = "SEC" | "TOD";
+export type TimeDisplayMethod = "SEC" | "TOD" | "TOD24";
 
 export type PlaybackConfig = {
   speed: number;

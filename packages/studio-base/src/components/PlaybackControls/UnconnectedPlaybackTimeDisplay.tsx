@@ -26,6 +26,7 @@ import { TimeDisplayMethod } from "@foxglove/studio-base/types/panels";
 import {
   formatDate,
   formatTime,
+  formatTime24,
   getValidatedTimeAndMethodFromString,
 } from "@foxglove/studio-base/util/formatTime";
 import { formatTimeRaw } from "@foxglove/studio-base/util/time";
@@ -67,7 +68,7 @@ const useStyles = makeStyles<{ timeDisplayMethod: TimeDisplayMethod }>()(
       },
       [`.${inputBaseClasses.input}`]: {
         fontFeatureSettings: `${theme.typography.fontFeatureSettings}, 'zero' !important`,
-        minWidth: timeDisplayMethod === "TOD" ? "28ch" : "20ch",
+        minWidth: timeDisplayMethod === "TOD" || timeDisplayMethod === "TOD24" ? "28ch" : "20ch",
       },
       [`.${iconButtonClasses.root}`]: {
         borderTopLeftRadius: 0,
@@ -190,9 +191,9 @@ export function UnconnectedPlaybackTimeDisplay({
   const timeOfDayString = useMemo(
     () =>
       currentTime
-        ? `${formatDate(currentTime, timezone)} ${formatTime(currentTime, timezone)}`
+        ? `${formatDate(currentTime, timezone)} ${appTimeFormat.timeFormat === "TOD24" ? formatTime24(currentTime, timezone) : formatTime(currentTime, timezone)}`
         : undefined,
-    [currentTime, timezone],
+    [appTimeFormat.timeFormat, currentTime, timezone],
   );
   const currentTimeString = useMemo(
     () => (appTimeFormat.timeFormat === "SEC" ? timeRawString : timeOfDayString),

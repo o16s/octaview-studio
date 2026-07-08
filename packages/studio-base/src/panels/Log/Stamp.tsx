@@ -15,7 +15,7 @@ import * as _ from "lodash-es";
 
 import { Time } from "@foxglove/studio";
 import { TimeDisplayMethod } from "@foxglove/studio-base/types/panels";
-import { formatTime } from "@foxglove/studio-base/util/formatTime";
+import { formatTime, formatTime24 } from "@foxglove/studio-base/util/formatTime";
 
 // pad the start of `val` with 0's to make the total string length `count` size
 function PadStart(val: unknown, count: number) {
@@ -31,6 +31,9 @@ type Props = {
 function Stamp(props: Props): JSX.Element {
   if (props.timestampFormat === "TOD") {
     const formattedTime = formatTime(props.stamp, props.timeZone);
+    return <span>{formattedTime}</span>;
+  } else if (props.timestampFormat === "TOD24") {
+    const formattedTime = formatTime24(props.stamp, props.timeZone);
     return <span>{formattedTime}</span>;
   } else {
     return (

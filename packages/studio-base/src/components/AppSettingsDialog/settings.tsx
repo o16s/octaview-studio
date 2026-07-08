@@ -37,7 +37,7 @@ import { Language } from "@foxglove/studio-base/i18n";
 import { reportError } from "@foxglove/studio-base/reportError";
 import { LaunchPreferenceValue } from "@foxglove/studio-base/types/LaunchPreferenceValue";
 import { TimeDisplayMethod } from "@foxglove/studio-base/types/panels";
-import { formatTime } from "@foxglove/studio-base/util/formatTime";
+import { formatTime, formatTime24 } from "@foxglove/studio-base/util/formatTime";
 import { formatTimeRaw } from "@foxglove/studio-base/util/time";
 
 const MESSAGE_RATES = [1, 3, 5, 10, 15, 20, 30, 60];
@@ -230,6 +230,9 @@ export function TimeFormat({
         </ToggleButton>
         <ToggleButton value="TOD" data-testid="timeformat-local">
           {formatTime(exampleTime, timezone)}
+        </ToggleButton>
+        <ToggleButton value="TOD24" data-testid="timeformat-local-24h">
+          {formatTime24(exampleTime, timezone)}
         </ToggleButton>
       </ToggleButtonGroup>
     </Stack>
