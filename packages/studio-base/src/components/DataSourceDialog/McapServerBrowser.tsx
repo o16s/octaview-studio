@@ -127,9 +127,8 @@ export default function McapServerBrowser(): JSX.Element {
       return;
     }
     const urls = Array.from(selected)
-      .map((path) => `${apiBase}/api/mcap/files/${path}`)
-      .join(",");
-    selectSource("mcap-server", { type: "connection", params: { urls } });
+      .map((filePath) => `${apiBase}/api/mcap/files/${encodeURIComponent(filePath)}`);
+    selectSource("mcap-server", { type: "connection", params: { urls: JSON.stringify(urls) } });
     dialogActions.dataSource.close();
   }, [apiBase, dialogActions.dataSource, selectSource, selected]);
 

@@ -23,7 +23,12 @@ class McapServerDataSourceFactory implements IDataSourceFactory {
       return;
     }
 
-    const urls = urlsParam.split(",");
+    let urls: string[];
+    try {
+      urls = JSON.parse(urlsParam) as string[];
+    } catch {
+      urls = [urlsParam];
+    }
     if (urls.length === 0) {
       return;
     }

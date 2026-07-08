@@ -91,7 +91,7 @@ func main() {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Range")
-			w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges")
+			w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -135,7 +135,7 @@ func main() {
 		}
 
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified")
 		// http.ServeContent handles Range requests, Content-Length, and Accept-Ranges automatically
 		http.ServeContent(w, r, stat.Name(), stat.ModTime(), f)
 	})
@@ -165,7 +165,7 @@ func main() {
 
 		// Serve patched index.html for root and SPA routes
 		serveIndex := path == "/"
-		if !serveIndex && path != "/" {
+		if !serveIndex {
 			cleanPath := strings.TrimPrefix(path, "/")
 			if _, err := fs.Stat(staticFS, cleanPath); err != nil {
 				serveIndex = true
