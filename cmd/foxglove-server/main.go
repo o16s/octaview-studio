@@ -47,7 +47,7 @@ func generateSelfSignedCert() (tls.Certificate, error) {
 		SerialNumber: serialNumber,
 		Subject:      pkix.Name{CommonName: "Foxglove Studio"},
 		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+		NotAfter:     time.Now().Add(5 * 365 * 24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.IPv6loopback},
