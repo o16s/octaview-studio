@@ -3,7 +3,6 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import {
-  Divider,
   Menu,
   MenuItem,
   PaperProps,
@@ -54,14 +53,6 @@ export function SettingsMenu({
     [dialogActions.preferences],
   );
 
-  const onDocsClick = useCallback(() => {
-    window.open("https://docs.foxglove.dev/docs", "_blank");
-  }, []);
-
-  const onSlackClick = useCallback(() => {
-    window.open("https://foxglove.dev/slack", "_blank");
-  }, []);
-
   return (
     <>
       <Menu
@@ -96,9 +87,6 @@ export function SettingsMenu({
             {t("extensions")}
           </MenuItem>
         )}
-        <Divider variant="middle" />
-        <MenuItem onClick={onDocsClick}>{t("documentation")}</MenuItem>
-        <MenuItem onClick={onSlackClick}>{t("joinSlackCommunity")}</MenuItem>
       </Menu>
     </>
   );
