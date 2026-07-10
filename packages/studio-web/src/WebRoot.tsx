@@ -12,6 +12,7 @@ import {
   Ros2LocalBagDataSourceFactory,
   RosbridgeDataSourceFactory,
   RemoteDataSourceFactory,
+  EdgeHubDataSourceFactory,
   FoxgloveWebSocketDataSourceFactory,
   UlogLocalDataSourceFactory,
   McapLocalDataSourceFactory,
@@ -44,6 +45,7 @@ export function WebRoot(props: {
     const sources = [
       new Ros1LocalBagDataSourceFactory(),
       new Ros2LocalBagDataSourceFactory(),
+      new EdgeHubDataSourceFactory(),
       new FoxgloveWebSocketDataSourceFactory(),
       new RosbridgeDataSourceFactory(),
       new UlogLocalDataSourceFactory(),
