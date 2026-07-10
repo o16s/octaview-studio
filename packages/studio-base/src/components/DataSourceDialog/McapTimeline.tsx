@@ -228,8 +228,8 @@ const useStyles = makeStyles()((theme) => ({
   },
   svgColumn: {
     flex: 1,
-    overflowX: "auto",
-    overflowY: "auto",
+    overflow: "hidden",
+    minWidth: 0,
   },
   selectionInfo: {
     marginTop: theme.spacing(1),
@@ -340,6 +340,8 @@ export default function McapTimeline(): JSX.Element {
   const [selCenter, setSelCenter] = useState<number | undefined>();
   const svgRef = useRef<SVGSVGElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const svgColumnRef = useRef<HTMLDivElement>(null);
+  const [svgColumnWidth, setSvgColumnWidth] = useState(0);
 
   // Hover tooltip state
   const [tooltipState, setTooltipState] = useState<{
@@ -361,6 +363,22 @@ export default function McapTimeline(): JSX.Element {
       timeSec: new Date(inc.time).getTime() / 1000,
     }));
   }, [incidents]);
+
+  // Measure SVG column width with ResizeObserver
+  useEffect(() => {
+    const el = svgColumnRef.current;
+    if (!el) {
+      return;
+    }
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setSvgColumnWidth(entry.contentRect.width);
+      }
+    });
+    ro.observe(el);
+    setSvgColumnWidth(el.clientWidth);
+    return () => { ro.disconnect(); };
+  }, []);
 
   // Download state
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | undefined>();
@@ -445,7 +463,7 @@ export default function McapTimeline(): JSX.Element {
   }, [files, viewDuration, urlParams.centerTime]);
 
   // SVG dimensions — add an incident row at top when incidents are present
-  const svgWidth = 1200;
+  const svgWidth = Math.max(svgColumnWidth, 200);
   const incidentRowOffset = hasIncidents ? INCIDENT_ROW_HEIGHT : 0;
   const svgHeight = HEADER_HEIGHT + incidentRowOffset + folders.length * ROW_HEIGHT;
 
@@ -995,7 +1013,7 @@ export default function McapTimeline(): JSX.Element {
           </div>
 
           {/* Right: SVG timeline */}
-          <div className={classes.svgColumn}>
+          <div ref={svgColumnRef} className={classes.svgColumn}>
             <svg
               ref={svgRef}
               width={svgWidth}
