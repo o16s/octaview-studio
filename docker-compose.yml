@@ -5,7 +5,7 @@ services:
       - "8152:8152"
     volumes:
       # Mount your MCAP recordings directory
-      - ./recordings:/data/mcap
+      - /mnt/datalog:/data/mcap
       # Optional: mount desktop installers for download buttons
       # - ./downloads:/data/downloads
     environment:
