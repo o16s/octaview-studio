@@ -38,7 +38,9 @@ export default class FoxgloveWebSocketDataSourceFactory implements IDataSourceFa
       },
       {
         id: "token",
-        label: "Auth token (optional)",
+        label: "Auth token",
+        placeholder:
+          "If you are using Octaview Edge Hub, you can enter the API token from the settings page",
         defaultValue: "",
       },
     ],
