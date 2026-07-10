@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"database/sql"
 	"embed"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -84,31 +85,87 @@ func getMcapTimeRange(path string) (startNs, endNs uint64, err error) {
 	defer reader.Close()
 
 	info, err := reader.Info()
-	if err != nil {
-		return 0, 0, fmt.Errorf("mcap info: %w", err)
-	}
+	if err == nil {
+		// Prefer Statistics record
+		if info.Statistics != nil && info.Statistics.MessageCount > 0 {
+			return info.Statistics.MessageStartTime, info.Statistics.MessageEndTime, nil
+		}
 
-	// Prefer Statistics record
-	if info.Statistics != nil && info.Statistics.MessageCount > 0 {
-		return info.Statistics.MessageStartTime, info.Statistics.MessageEndTime, nil
-	}
-
-	// Fallback: scan ChunkIndex records
-	if len(info.ChunkIndexes) > 0 {
-		startNs = info.ChunkIndexes[0].MessageStartTime
-		endNs = info.ChunkIndexes[0].MessageEndTime
-		for _, ci := range info.ChunkIndexes[1:] {
-			if ci.MessageStartTime < startNs {
-				startNs = ci.MessageStartTime
+		// Fallback: scan ChunkIndex records
+		if len(info.ChunkIndexes) > 0 {
+			startNs = info.ChunkIndexes[0].MessageStartTime
+			endNs = info.ChunkIndexes[0].MessageEndTime
+			for _, ci := range info.ChunkIndexes[1:] {
+				if ci.MessageStartTime < startNs {
+					startNs = ci.MessageStartTime
+				}
+				if ci.MessageEndTime > endNs {
+					endNs = ci.MessageEndTime
+				}
 			}
-			if ci.MessageEndTime > endNs {
-				endNs = ci.MessageEndTime
+			return startNs, endNs, nil
+		}
+	}
+
+	// Info() failed (e.g. file still being written — no valid footer).
+	// Fall back to scanning chunk headers from the start of the file.
+	return getMcapTimeRangeFromChunks(path)
+}
+
+// getMcapTimeRangeFromChunks reads chunk headers sequentially from the start
+// of the file. This works for in-progress MCAP files that don't have a valid
+// footer yet, since each chunk header contains MessageStartTime/MessageEndTime.
+func getMcapTimeRangeFromChunks(path string) (startNs, endNs uint64, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+
+	lexer, err := mcap.NewLexer(f, &mcap.LexerOptions{
+		EmitChunks: true,
+	})
+	if err != nil {
+		return 0, 0, fmt.Errorf("mcap lexer: %w", err)
+	}
+	defer lexer.Close()
+
+	found := false
+	for {
+		token, data, err := lexer.Next(nil)
+		if err != nil {
+			break // EOF or truncated record — stop scanning
+		}
+		if token != mcap.TokenChunk {
+			continue
+		}
+		// Chunk header: first 8 bytes = MessageStartTime, next 8 = MessageEndTime
+		if len(data) < 16 {
+			continue
+		}
+		chunkStart := binary.LittleEndian.Uint64(data[0:8])
+		chunkEnd := binary.LittleEndian.Uint64(data[8:16])
+		if chunkStart == 0 && chunkEnd == 0 {
+			continue
+		}
+		if !found {
+			startNs = chunkStart
+			endNs = chunkEnd
+			found = true
+		} else {
+			if chunkStart < startNs {
+				startNs = chunkStart
+			}
+			if chunkEnd > endNs {
+				endNs = chunkEnd
 			}
 		}
-		return startNs, endNs, nil
 	}
 
-	return 0, 0, fmt.Errorf("no statistics or chunk indexes found")
+	if !found {
+		return 0, 0, fmt.Errorf("no chunks found in file")
+	}
+	return startNs, endNs, nil
 }
 
 func generateSelfSignedCert() (tls.Certificate, error) {
