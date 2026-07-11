@@ -2,7 +2,7 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, shell } = require("electron");
 const path = require("path");
 
 // Allow self-signed certificates for local network connections (WSS to Edge Hubs, etc.)
@@ -44,6 +44,14 @@ function createWindow() {
     : path.join(__dirname, "..", "web", ".webpack", "index.html");
 
   win.loadFile(appPath);
+
+  // Open external links in the system browser instead of a new Electron window
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://") || url.startsWith("http://")) {
+      shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
 }
 
 app.whenReady().then(createWindow);

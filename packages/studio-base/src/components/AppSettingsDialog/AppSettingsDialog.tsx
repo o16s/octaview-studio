@@ -131,54 +131,55 @@ const useStyles = makeStyles()((theme) => ({
 
 type SectionKey = "resources" | "products" | "contact" | "legal";
 
-const aboutItems = new Map<
-  SectionKey,
-  {
-    subheader: string;
-    links: { title: string; url?: string }[];
-  }
->([
-  [
-    "resources",
+function getAboutItems(lang: string) {
+  return new Map<
+    SectionKey,
     {
-      subheader: "External resources",
-      links: [
-        ...(isDesktopApp() ? [] : [{ title: "Desktop app", url: "https://octaview.ai/download" }]),
-        { title: "Browse docs", url: "https://docs.octaview.ai/docs" },
-        { title: "Join our community", url: "https://octaview.ai/community" },
-      ],
-    },
-  ],
-  [
-    "products",
-    {
-      subheader: "Products",
-      links: [
-        { title: "Octaview Studio", url: "https://octaview.ai/studio" },
-      ],
-    },
-  ],
-  [
-    "contact",
-    {
-      subheader: "Contact",
-      links: [
-        { title: "Give feedback", url: "https://octaview.ai/contact" },
-        { title: "Schedule a demo", url: "https://octaview.ai/demo" },
-      ],
-    },
-  ],
-  [
-    "legal",
-    {
-      subheader: "Legal",
-      links: [
-        { title: "License terms", url: "https://octaview.ai/legal/studio-license" },
-        { title: "Privacy policy", url: "https://octaview.ai/legal/privacy" },
-      ],
-    },
-  ],
-]);
+      subheader: string;
+      links: { title: string; url: string }[];
+    }
+  >([
+    [
+      "resources",
+      {
+        subheader: "External resources",
+        links: [
+          ...(isDesktopApp() ? [] : [{ title: "Desktop app", url: "https://octaview.ai/download" }]),
+          { title: "Browse docs", url: `https://octaview.ai/${lang}/docs` },
+        ],
+      },
+    ],
+    [
+      "products",
+      {
+        subheader: "Products",
+        links: [
+          { title: "Octaview Studio", url: "https://octaview.ai" },
+        ],
+      },
+    ],
+    [
+      "contact",
+      {
+        subheader: "Contact",
+        links: [
+          { title: "Give feedback", url: `https://octaview.ai/${lang}/#contact` },
+          { title: "Schedule a demo", url: `https://octaview.ai/${lang}/#contact` },
+        ],
+      },
+    ],
+    [
+      "legal",
+      {
+        subheader: "Legal",
+        links: [
+          { title: "License terms", url: "https://github.com/o16s/octaview-studio/blob/main/LICENSE" },
+          { title: "Privacy policy", url: "https://octaview.ai/privacy" },
+        ],
+      },
+    ],
+  ]);
+}
 
 export type AppSettingsTab = "general" | "extensions" | "experimental-features" | "about";
 
@@ -188,7 +189,9 @@ const selectWorkspaceInitialActiveTab = (store: WorkspaceContextStore) =>
 export function AppSettingsDialog(
   props: DialogProps & { activeTab?: AppSettingsTab },
 ): JSX.Element {
-  const { t } = useTranslation("appSettings");
+  const { t, i18n } = useTranslation("appSettings");
+  const lang = i18n.language.startsWith("de") ? "de" : "en";
+  const aboutItems = getAboutItems(lang);
   const { activeTab: _activeTab } = props;
   const initialActiveTab = useWorkspaceStore(selectWorkspaceInitialActiveTab);
   const [activeTab, setActiveTab] = useState<AppSettingsTab>(
@@ -337,6 +340,11 @@ export function AppSettingsDialog(
                         data-testid={link.title}
                         href={link.url}
                         target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e: MouseEvent) => {
+                          e.preventDefault();
+                          window.open(link.url, "_blank", "noopener,noreferrer");
+                        }}
                       >
                         {link.title}
                       </Link>
