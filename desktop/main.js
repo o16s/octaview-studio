@@ -5,11 +5,33 @@
 const { app, BrowserWindow } = require("electron");
 const path = require("path");
 
+// Allow self-signed certificates for local network connections (WSS to Edge Hubs, etc.)
+app.on("certificate-error", (event, _webContents, url, _error, _certificate, callback) => {
+  const parsed = new URL(url);
+  const host = parsed.hostname;
+
+  // Allow self-signed certs for localhost and private network IPs
+  const isLocal =
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host.startsWith("192.168.") ||
+    host.startsWith("10.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+
+  if (isLocal) {
+    event.preventDefault();
+    callback(true);
+  } else {
+    callback(false);
+  }
+});
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
-    title: "Foxglove Studio",
+    title: "Octaview Studio",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
