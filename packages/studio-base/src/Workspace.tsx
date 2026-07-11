@@ -463,7 +463,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
             }
             const parsed = JSON.parse(line) as Record<string, unknown>;
             const fileEntry = parsed.file as { path?: string } | undefined;
-            if (fileEntry?.path === filePath) {
+            if (fileEntry?.path != undefined && (fileEntry.path === filePath || filePath.endsWith("/" + fileEntry.path))) {
               matchedPath = fileEntry.path;
               break;
             }
