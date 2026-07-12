@@ -56,6 +56,9 @@ export function getPanelIdForType(type: string): string {
 }
 
 export function getPanelTypeFromId(id: string): string {
+  if (typeof id !== "string") {
+    return "";
+  }
   return id.split("!")[0] ?? "";
 }
 

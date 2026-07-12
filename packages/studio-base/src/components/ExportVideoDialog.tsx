@@ -14,7 +14,7 @@ import {
   ListItemText,
   Typography,
 } from "@mui/material";
-import { ReactElement, useCallback, useMemo, useState } from "react";
+import { ReactElement, useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { MessageEvent } from "@foxglove/studio";
 import {
@@ -32,6 +32,7 @@ import {
 const selectTopics = (ctx: MessagePipelineContext) => ctx.sortedTopics;
 const selectBlocks = (ctx: MessagePipelineContext) =>
   ctx.playerState.progress?.messageCache?.blocks;
+const selectSetSubscriptions = (ctx: MessagePipelineContext) => ctx.setSubscriptions;
 
 type ExportState =
   | { status: "idle" }
@@ -46,8 +47,10 @@ export function ExportVideoDialog({
   open: boolean;
   onClose: () => void;
 }): ReactElement {
+  const subscriptionId = useId();
   const topics = useMessagePipeline(selectTopics);
   const blocks = useMessagePipeline(selectBlocks);
+  const setSubscriptions = useMessagePipeline(selectSetSubscriptions);
 
   const imageTopics = useMemo(
     () =>
@@ -59,6 +62,22 @@ export function ExportVideoDialog({
 
   const [selectedTopic, setSelectedTopic] = useState<string | undefined>();
   const [exportState, setExportState] = useState<ExportState>({ status: "idle" });
+
+  // Subscribe to the selected topic so block messages get preloaded
+  useEffect(() => {
+    if (selectedTopic) {
+      setSubscriptions(subscriptionId, [{ topic: selectedTopic, preloadType: "full" }]);
+    } else {
+      setSubscriptions(subscriptionId, []);
+    }
+  }, [subscriptionId, setSubscriptions, selectedTopic]);
+
+  // Clean up subscription on unmount
+  useEffect(() => {
+    return () => {
+      setSubscriptions(subscriptionId, []);
+    };
+  }, [subscriptionId, setSubscriptions]);
 
   const getBlockMessages = useCallback(
     (topic: string): MessageEvent[] => {
@@ -119,6 +138,17 @@ export function ExportVideoDialog({
 
   const isExporting = exportState.status === "exporting";
 
+  const selectedMessageCount = useMemo(() => {
+    if (!selectedTopic || !blocks) return 0;
+    let count = 0;
+    for (const block of blocks) {
+      if (!block) continue;
+      const msgs = block.messagesByTopic[selectedTopic];
+      if (msgs) count += msgs.length;
+    }
+    return count;
+  }, [selectedTopic, blocks]);
+
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
       <DialogTitle>Export Video</DialogTitle>
@@ -147,6 +177,14 @@ export function ExportVideoDialog({
                 </ListItemButton>
               ))}
             </List>
+
+            {selectedTopic != undefined && exportState.status === "idle" && (
+              <Typography variant="caption" color="text.secondary">
+                {selectedMessageCount === 0
+                  ? "Loading frames…"
+                  : `${selectedMessageCount} frames available`}
+              </Typography>
+            )}
 
             {exportState.status === "exporting" && (
               <Stack gap={0.5}>
@@ -194,7 +232,7 @@ export function ExportVideoDialog({
           <Button
             variant="contained"
             onClick={() => void handleExport()}
-            disabled={!selectedTopic || isExporting || imageTopics.length === 0}
+            disabled={!selectedTopic || isExporting || imageTopics.length === 0 || selectedMessageCount === 0}
           >
             {isExporting ? "Exporting..." : "Export WebM"}
           </Button>
