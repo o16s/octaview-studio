@@ -13,6 +13,7 @@ Complete reference for all URL query parameters accepted by Octaview Studio.
 | Parameter | Example | Description |
 |-----------|---------|-------------|
 | `openIn` | `?openIn=web` | Controls whether to open in the web app or launch the desktop app. Values: `web`, `desktop`, `ask`. Defaults to `web` if not set. |
+| `embed` | `?embed=true` | Embed/kiosk mode — hides the app bar, sidebars, and playback controls. Only the panel layout is shown. Combine with `layout` or `layoutUrl` and a data source for dashboard-style embedding in iframes or kiosks. |
 
 ## Recordings View (MCAP Timeline)
 
@@ -84,7 +85,7 @@ Load a panel layout from the URL, replacing the current layout on page load.
 | `layout` | `?layout=<base64 or JSON>` | Inline layout JSON (base64-encoded recommended). Accepts raw JSON or base64. |
 | `layoutUrl` | `?layoutUrl=<url>` | URL to a layout JSON file. Fetched on page load. Better for complex layouts. |
 
-If both are present, `layout` takes precedence.
+If both are present, `layout` takes precedence. `layoutUrl` must use `http:` or `https:` protocol and responses are limited to 1 MB.
 
 ### Layout JSON Structure
 
@@ -134,6 +135,11 @@ Remote layout file:
 Combined with data source:
 ```
 /?ds=foxglove-websocket&ds.url=wss://192.168.1.100:8765&layoutUrl=https://your-server.com/layouts/default.json
+```
+
+Embed mode dashboard (no UI chrome, just panels):
+```
+/?embed=true&ds=foxglove-websocket&ds.url=wss://192.168.1.100:8765&layout=eyJsYXlvdXQiOiJQbG90IWFiYyJ9
 ```
 
 ## Data Source Selection
