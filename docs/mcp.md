@@ -5,30 +5,37 @@ The AI Agent in Octaview Studio uses a tool-calling pattern inspired by MCP (Mod
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Browser                                                │
-│                                                         │
-│  ┌──────────┐    ┌──────────────┐    ┌───────────────┐  │
-│  │ Chat UI  │───▶│  Agent Loop  │───▶│ OpenAI API    │  │
-│  │ index.tsx │   │ agentLoop.ts │   │ (user config) │  │
-│  └──────────┘    └──────┬───────┘    └───────────────┘  │
-│                         │                               │
-│                         │ tool_calls                    │
-│                         ▼                               │
-│                  ┌──────────────┐                       │
-│                  │Tool Executor │                       │
-│                  │toolExecutor  │                       │
-│                  └──────┬───────┘                       │
-│                         │                               │
-│           ┌─────────────┼─────────────┐                 │
-│           ▼             ▼             ▼                 │
-│    ┌────────────┐ ┌──────────┐ ┌───────────┐           │
-│    │ Topics &   │ │ Layout   │ │ Schema    │           │
-│    │ Pipeline   │ │ Actions  │ │ Introspect│           │
-│    └────────────┘ └──────────┘ └───────────┘           │
-│    MessagePipeline CurrentLayout  RosDatatypes          │
-│    (React context) (React context) (React context)      │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Browser                                                         │
+│                                                                  │
+│  ┌──────────┐    ┌──────────────┐    ┌───────────────┐           │
+│  │ Chat UI  │───▶│  Agent Loop  │───▶│ OpenAI API    │           │
+│  │ index.tsx │   │ agentLoop.ts │   │ (user config) │           │
+│  └──────────┘    └──────┬───────┘    └───────────────┘           │
+│                         │                                        │
+│                         │ tool_calls                             │
+│                         ▼                                        │
+│                  ┌──────────────┐                                │
+│                  │Tool Executor │                                │
+│                  │toolExecutor  │                                │
+│                  └──────┬───────┘                                │
+│                         │                                        │
+│     ┌──────────┬────────┼────────┬──────────┐                    │
+│     ▼          ▼        ▼        ▼          ▼                    │
+│ ┌────────┐ ┌────────┐ ┌──────┐ ┌────────┐ ┌──────────────┐      │
+│ │Topics &│ │Layout  │ │Schema│ │Block   │ │Playback &    │      │
+│ │Pipeline│ │Actions │ │Intro.│ │Messages│ │Data Sources  │      │
+│ └────────┘ └────────┘ └──────┘ └────┬───┘ └──────┬───────┘      │
+│ MessagePipeline CurrentLayout Datatypes  │        │              │
+│                                  messageCache  seekPlayback      │
+│                                  .blocks    selectSource         │
+│                                          ┌────────┘              │
+│                                          ▼                       │
+│                                   ┌─────────────┐               │
+│                                   │ Go Server   │               │
+│                                   │ /api/mcap/* │               │
+│                                   └─────────────┘               │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## Components
@@ -117,7 +124,9 @@ Builds the system message that instructs the LLM about:
 - Available panel types and their config formats
 - MessagePath syntax rules (topic name conventions, no spurious slash prepending)
 - Layout mosaic tree structure
-- Recommended workflow (list topics → choose panels → create layout)
+- Visualization workflow (list topics → choose panels → create layout)
+- Data analysis workflow (read values → statistics → peaks → seek → annotate)
+- Recording search workflow (search → load → explore topics)
 
 ### 6. Markdown Parser (`parseMarkdown.ts`)
 
@@ -163,9 +172,9 @@ Converts assistant response markdown to HTML for rendering. Handles bold, italic
 ### How Tools Access Studio State
 
 Tools don't call React hooks directly. Instead, the `AgentChat` component:
-1. Uses hooks to read current state (`useMessagePipeline`, `useCurrentLayoutActions`, `usePanelCatalog`)
+1. Uses hooks to read current state (`useMessagePipeline`, `useCurrentLayoutActions`, `usePanelCatalog`, `usePlayerSelection`)
 2. Packages the values into a `StudioContext` object
-3. Passes it to `createToolExecutor()` which closes over the values
+3. Passes it to `createToolExecutor(ctx, fetchFn?)` which closes over the values
 4. The returned executor function is passed to `runAgentLoop()`
 
 This keeps the tool logic pure and testable — tests create a mock `StudioContext` with `jest.fn()` callbacks.
@@ -219,10 +228,10 @@ packages/studio-base/src/components/AgentChat/
 ├── types.ts              # ChatMessage, ToolCall, ToolDefinition types
 ├── agentLoop.ts          # Core loop: API → tool calls → repeat
 ├── agentLoop.test.ts     # 4 tests (text response, tool loop, error, max iterations)
-├── toolDefinitions.ts    # JSON schemas sent to LLM
+├── toolDefinitions.ts    # JSON schemas for 15 tools sent to LLM
 ├── toolDefinitions.test.ts
 ├── toolExecutor.ts       # Tool name → handler mapping + StudioContext
-├── toolExecutor.test.ts  # 9 tests (all tools + error case)
+├── toolExecutor.test.ts  # 28 tests (all tools + error/edge cases)
 ├── systemPrompt.ts       # System message builder
 ├── systemPrompt.test.ts
 ├── parseMarkdown.ts      # MD → HTML (XSS-safe)
