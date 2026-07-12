@@ -569,64 +569,18 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
     const displayName = filePath.includes("/")
       ? filePath.slice(filePath.lastIndexOf("/") + 1)
       : filePath;
-    setFileDownloadState({ filename: displayName, loaded: 0, total: 0, phase: "Looking up recording…" });
+    setFileDownloadState({ filename: displayName, loaded: 0, total: 0, phase: "Downloading…" });
 
     (async () => {
       try {
-        // Fetch index to find the file
-        const res = await fetch(`${apiBase}/api/mcap/index`, { signal: abortController.signal });
-        if (!res.ok) {
-          throw new Error(`Index fetch failed: HTTP ${res.status}`);
-        }
-
-        const reader = res.body?.getReader();
-        if (!reader) {
-          throw new Error("No response body from index");
-        }
-
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let matchedPath: string | undefined;
-
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
-          }
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-          for (const line of lines) {
-            if (!line.trim()) {
-              continue;
-            }
-            const parsed = JSON.parse(line) as Record<string, unknown>;
-            const fileEntry = parsed.file as { path?: string } | undefined;
-            if (fileEntry?.path != undefined && (fileEntry.path === filePath || filePath.endsWith("/" + fileEntry.path))) {
-              matchedPath = fileEntry.path;
-              break;
-            }
-          }
-          if (matchedPath != undefined) {
-            await reader.cancel();
-            break;
-          }
-        }
-
-        if (matchedPath == undefined) {
-          log.error(`File not found in index: ${filePath}`);
-          enqueueSnackbar(`Recording not found: ${filePath}`, { variant: "error" });
-          return;
-        }
-
-        // Download the file with progress tracking
-        const fileName = matchedPath.includes("/")
-          ? matchedPath.slice(matchedPath.lastIndexOf("/") + 1)
-          : matchedPath;
-        const fileUrl = `${apiBase}/api/mcap/files/${encodeURIComponent(matchedPath)}`;
+        // Fetch the file directly — no index lookup needed
+        const fileUrl = `${apiBase}/api/mcap/files/${encodeURIComponent(filePath)}`;
         const fileRes = await fetch(fileUrl, { signal: abortController.signal });
         if (!fileRes.ok) {
-          throw new Error(`File download failed: HTTP ${fileRes.status}`);
+          setFileDownloadState(undefined);
+          log.error(`File not found: ${filePath} (HTTP ${fileRes.status})`);
+          enqueueSnackbar(`Recording not found: ${filePath}`, { variant: "error" });
+          return;
         }
 
         const contentLength = parseInt(fileRes.headers.get("Content-Length") ?? "0", 10);
@@ -635,22 +589,22 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
           throw new Error("No response body for file download");
         }
 
-        setFileDownloadState({ filename: fileName, loaded: 0, total: contentLength, phase: undefined });
+        setFileDownloadState({ filename: displayName, loaded: 0, total: contentLength });
         const chunks: Uint8Array[] = [];
         let loaded = 0;
         for (;;) {
-          const { done: readDone, value: chunk } = await fileReader.read();
-          if (readDone) {
+          const { done, value: chunk } = await fileReader.read();
+          if (done) {
             break;
           }
           chunks.push(chunk);
           loaded += chunk.byteLength;
-          setFileDownloadState({ filename: fileName, loaded, total: contentLength });
+          setFileDownloadState({ filename: displayName, loaded, total: contentLength });
         }
         setFileDownloadState(undefined);
 
         const blob = new Blob(chunks);
-        const file = new File([blob], fileName);
+        const file = new File([blob], displayName);
 
         const downloadId = `file-${Date.now()}`;
         storeDownloadedFiles(downloadId, [file]);
