@@ -101,17 +101,21 @@ export interface WebLLMEngine {
 
 export function createWebLLMProvider(engine: WebLLMEngine): ChatCompletionProvider {
   return async ({ messages, tools }: ChatCompletionRequest): Promise<ChatCompletionResponse> => {
-    // WebLLM Hermes models reject custom system prompts when tools are specified
-    // (they use a built-in system prompt for function calling).
-    // Convert system messages to user messages so the instructions still reach the model.
-    const adjustedMessages =
-      tools.length > 0
-        ? messages.map((msg) =>
-            msg.role === "system"
-              ? { ...msg, role: "user" as const, content: `[Instructions]\n${msg.content ?? ""}` }
-              : msg,
-          )
-        : messages;
+    // Adapt messages to WebLLM's stricter validation:
+    // 1. Hermes models reject system messages when tools are specified (they inject
+    //    their own function-calling system prompt). Convert to user messages.
+    // 2. WebLLM requires assistant message content to be a string, but tool-call-only
+    //    responses have content=null/undefined. Default to empty string.
+    const hasTools = tools.length > 0;
+    const adjustedMessages = messages.map((msg) => {
+      if (hasTools && msg.role === "system") {
+        return { ...msg, role: "user" as const, content: `[Instructions]\n${msg.content ?? ""}` };
+      }
+      if (msg.role === "assistant" && msg.content == undefined) {
+        return { ...msg, content: "" };
+      }
+      return msg;
+    });
 
     return await engine.chat.completions.create({ messages: adjustedMessages, tools });
   };

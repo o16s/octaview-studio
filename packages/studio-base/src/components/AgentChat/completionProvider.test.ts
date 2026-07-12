@@ -132,6 +132,34 @@ describe("createWebLLMProvider", () => {
     expect(sentMessages[1].content).toBe("Hi");
   });
 
+  it("defaults assistant content to empty string when undefined", async () => {
+    const mockEngine = {
+      chat: {
+        completions: {
+          create: jest.fn().mockResolvedValue({ choices: [{ message: { content: "ok" } }] }),
+        },
+      },
+    };
+
+    const provider = createWebLLMProvider(mockEngine as any);
+    const messages: ChatMessage[] = [
+      { role: "user", content: "Hi" },
+      {
+        role: "assistant",
+        content: undefined,
+        tool_calls: [{ id: "call_1", function: { name: "foo", arguments: "{}" } }],
+      },
+      { role: "tool", content: "result", tool_call_id: "call_1" },
+    ];
+
+    await provider({ messages, tools: [] });
+
+    const sentMessages = mockEngine.chat.completions.create.mock.calls[0][0].messages;
+    expect(sentMessages[1].role).toBe("assistant");
+    expect(sentMessages[1].content).toBe("");
+    expect(sentMessages[1].tool_calls).toBeDefined();
+  });
+
   it("keeps system messages when no tools are present", async () => {
     const mockEngine = {
       chat: {
