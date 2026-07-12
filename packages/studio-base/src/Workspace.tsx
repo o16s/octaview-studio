@@ -665,6 +665,9 @@ export default function Workspace(props: WorkspaceProps): JSX.Element {
         open: initialItem != undefined,
         item: initialItem,
       },
+      exportVideo: {
+        open: false,
+      },
       preferences: {
         initialTab: undefined,
         open: false,

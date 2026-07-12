@@ -40,6 +40,10 @@ export type WorkspaceActions = {
       close: () => void;
       open: (item: DataSourceDialogItem, dataSource?: IDataSourceFactory) => void;
     };
+    exportVideo: {
+      close: () => void;
+      open: () => void;
+    };
     openFile: {
       open: () => Promise<void>;
     };
@@ -200,6 +204,19 @@ export function useWorkspaceActions(): WorkspaceActions {
               (draft as WorkspaceContextStore).dialogs.dataSource.activeDataSource = dataSource;
               draft.dialogs.dataSource.item = selectedDataSourceDialogItem;
               draft.dialogs.dataSource.open = true;
+            });
+          },
+        },
+
+        exportVideo: {
+          close: () => {
+            set((draft) => {
+              draft.dialogs.exportVideo = { open: false };
+            });
+          },
+          open: () => {
+            set((draft) => {
+              draft.dialogs.exportVideo = { open: true };
             });
           },
         },

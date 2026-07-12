@@ -111,6 +111,15 @@ export function AppMenu(props: AppMenuProps): JSX.Element {
           handleNestedMenuClose();
         },
       },
+      {
+        type: "item",
+        label: "Export Video...",
+        key: "export-video",
+        onClick: () => {
+          dialogActions.exportVideo.open();
+          handleNestedMenuClose();
+        },
+      },
       { type: "divider" },
       { type: "item", label: t("recentDataSources"), key: "recent-sources", disabled: true },
     ];

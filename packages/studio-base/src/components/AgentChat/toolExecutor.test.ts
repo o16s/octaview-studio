@@ -580,6 +580,87 @@ describe("createToolExecutor", () => {
     expect(result).toContain("No files");
   });
 
+  // --- zoom_plot ---
+
+  it("zoom_plot sets axis bounds on a Plot panel", async () => {
+    const savePanelConfigs = jest.fn();
+    const ctx = makeContext({ savePanelConfigs });
+    const execute = createToolExecutor(ctx);
+
+    const result = await execute("zoom_plot", {
+      panelId: "Plot!abc",
+      minX: 10,
+      maxX: 20,
+      minY: -5,
+      maxY: 5,
+    });
+
+    expect(savePanelConfigs).toHaveBeenCalledWith({
+      configs: [
+        {
+          id: "Plot!abc",
+          config: { minXValue: 10, maxXValue: 20, minYValue: -5, maxYValue: 5 },
+          override: false,
+        },
+      ],
+    });
+    expect(result).toContain("Plot!abc");
+  });
+
+  it("zoom_plot sets only X bounds when Y is omitted", async () => {
+    const savePanelConfigs = jest.fn();
+    const ctx = makeContext({ savePanelConfigs });
+    const execute = createToolExecutor(ctx);
+
+    await execute("zoom_plot", { panelId: "Plot!abc", minX: 5, maxX: 15 });
+
+    const config = savePanelConfigs.mock.calls[0][0].configs[0].config;
+    expect(config.minXValue).toBe(5);
+    expect(config.maxXValue).toBe(15);
+    expect(config).not.toHaveProperty("minYValue");
+    expect(config).not.toHaveProperty("maxYValue");
+  });
+
+  it("zoom_plot sets only Y bounds when X is omitted", async () => {
+    const savePanelConfigs = jest.fn();
+    const ctx = makeContext({ savePanelConfigs });
+    const execute = createToolExecutor(ctx);
+
+    await execute("zoom_plot", { panelId: "Plot!abc", minY: 0, maxY: 100 });
+
+    const config = savePanelConfigs.mock.calls[0][0].configs[0].config;
+    expect(config).not.toHaveProperty("minXValue");
+    expect(config).not.toHaveProperty("maxXValue");
+    expect(config.minYValue).toBe(0);
+    expect(config.maxYValue).toBe(100);
+  });
+
+  // --- reset_plot_view ---
+
+  it("reset_plot_view clears axis bounds on a Plot panel", async () => {
+    const savePanelConfigs = jest.fn();
+    const ctx = makeContext({ savePanelConfigs });
+    const execute = createToolExecutor(ctx);
+
+    const result = await execute("reset_plot_view", { panelId: "Plot!abc" });
+
+    expect(savePanelConfigs).toHaveBeenCalledWith({
+      configs: [
+        {
+          id: "Plot!abc",
+          config: {
+            minXValue: undefined,
+            maxXValue: undefined,
+            minYValue: undefined,
+            maxYValue: undefined,
+          },
+          override: false,
+        },
+      ],
+    });
+    expect(result).toContain("Reset");
+  });
+
   it("annotate_plot works even when panel was just created (not in configById snapshot)", async () => {
     const savePanelConfigs = jest.fn();
     const ctx = makeContext({

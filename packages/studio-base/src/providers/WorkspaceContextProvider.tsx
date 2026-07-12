@@ -24,6 +24,9 @@ export function makeWorkspaceContextInitialState(): WorkspaceContextStore {
         item: undefined,
         open: false,
       },
+      exportVideo: {
+        open: false,
+      },
       preferences: {
         initialTab: undefined,
         open: false,

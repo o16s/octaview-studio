@@ -243,6 +243,40 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "zoom_plot",
+      description:
+        "Zoom a Plot panel to specific axis bounds. Set X bounds to focus on a time range, Y bounds to focus on a value range, or both. Times are elapsed seconds from recording start. Useful after find_peaks or annotate_plot to show the user a specific region.",
+      parameters: {
+        type: "object",
+        properties: {
+          panelId: { type: "string", description: "Panel ID of the Plot panel (e.g. 'Plot!abc123')" },
+          minX: { type: "number", description: "Minimum X-axis value (elapsed seconds)" },
+          maxX: { type: "number", description: "Maximum X-axis value (elapsed seconds)" },
+          minY: { type: "number", description: "Minimum Y-axis value" },
+          maxY: { type: "number", description: "Maximum Y-axis value" },
+        },
+        required: ["panelId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reset_plot_view",
+      description:
+        "Reset a Plot panel's view to show the full data range (auto-fit). Clears any custom axis bounds set by zoom_plot or manual interaction.",
+      parameters: {
+        type: "object",
+        properties: {
+          panelId: { type: "string", description: "Panel ID of the Plot panel (e.g. 'Plot!abc123')" },
+        },
+        required: ["panelId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "annotate_plot",
       description:
         "Add annotation regions (highlighted time ranges with labels) to a Plot panel. Use the panel ID returned by add_panel or from get_current_layout. Annotations appear as shaded colored rectangles on the chart. Times are elapsed seconds from recording start.",

@@ -3,7 +3,10 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 export function buildSystemPrompt(panelTypes: string[]): string {
+  const now = new Date().toISOString();
   return `You are an AI assistant embedded in Octaview Studio, a robotics data visualization application.
+
+Current wall clock time: ${now}
 
 Your job is to help the user visualize their data by creating and arranging panels. You can:
 - List and search available topics from the data source
@@ -75,6 +78,8 @@ When the user asks about data values, statistics, or anomalies:
 3. Use find_peaks to locate outliers or peaks — provide either an absolute threshold or a stddev multiplier
 4. Use seek_to_time to jump playback to a specific elapsed time
 5. Use annotate_plot to highlight time ranges on a Plot panel
+6. Use zoom_plot to zoom a Plot panel to a specific time/value range — great for showing the user exactly where an anomaly is
+7. Use reset_plot_view to reset a Plot panel's view back to the full data range
 
 Data analysis tools read from the block loader cache (pre-loaded MCAP data). They do NOT work with live WebSocket streams.
 

@@ -364,6 +364,41 @@ export function createToolExecutor(
       return `Loaded ${downloadedFiles.length} recording(s).`;
     },
 
+    zoom_plot: async (args): Promise<string> => {
+      const panelId = args.panelId as string;
+      const config: Record<string, unknown> = {};
+      if (args.minX != undefined) config.minXValue = args.minX as number;
+      if (args.maxX != undefined) config.maxXValue = args.maxX as number;
+      if (args.minY != undefined) config.minYValue = args.minY as number;
+      if (args.maxY != undefined) config.maxYValue = args.maxY as number;
+
+      ctx.savePanelConfigs({
+        configs: [{ id: panelId, config, override: false }],
+      });
+
+      return `Zoomed ${panelId} to specified bounds.`;
+    },
+
+    reset_plot_view: async (args): Promise<string> => {
+      const panelId = args.panelId as string;
+      ctx.savePanelConfigs({
+        configs: [
+          {
+            id: panelId,
+            config: {
+              minXValue: undefined,
+              maxXValue: undefined,
+              minYValue: undefined,
+              maxYValue: undefined,
+            },
+            override: false,
+          },
+        ],
+      });
+
+      return `Reset view for ${panelId}.`;
+    },
+
     annotate_plot: async (args): Promise<string> => {
       const panelId = args.panelId as string;
       const annotations = args.annotations as Array<{

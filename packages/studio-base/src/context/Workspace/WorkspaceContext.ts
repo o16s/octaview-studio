@@ -29,6 +29,9 @@ export type WorkspaceContextStore = {
       item: undefined | DataSourceDialogItem;
       open: boolean;
     };
+    exportVideo: {
+      open: boolean;
+    };
     preferences: {
       initialTab: undefined | AppSettingsTab;
       open: boolean;

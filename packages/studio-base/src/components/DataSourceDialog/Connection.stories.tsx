@@ -23,6 +23,7 @@ const Wrapper = (Story: StoryFn): JSX.Element => {
               item: "connection",
               open: true,
             },
+            exportVideo: { open: false },
             preferences: {
               initialTab: undefined,
               open: false,
