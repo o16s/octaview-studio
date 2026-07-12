@@ -528,7 +528,11 @@ describe("createToolExecutor", () => {
       configs: [
         {
           id: "Plot!abc",
-          config: { annotations },
+          config: {
+            annotations: [
+              { startTime: 10.0, endTime: 20.0, label: "Anomaly", color: "#ff0000", enabled: true },
+            ],
+          },
           override: false,
         },
       ],
@@ -576,16 +580,20 @@ describe("createToolExecutor", () => {
     expect(result).toContain("No files");
   });
 
-  it("annotate_plot returns error for non-existent panel", async () => {
+  it("annotate_plot works even when panel was just created (not in configById snapshot)", async () => {
+    const savePanelConfigs = jest.fn();
     const ctx = makeContext({
+      savePanelConfigs,
       currentLayout: { layout: "Plot!abc", configById: {} },
     });
     const execute = createToolExecutor(ctx);
 
     const result = await execute("annotate_plot", {
-      panelId: "Plot!missing",
+      panelId: "Plot!new",
       annotations: [{ startTime: 0, endTime: 1, label: "test" }],
     });
-    expect(result).toContain("not found");
+
+    expect(savePanelConfigs).toHaveBeenCalledTimes(1);
+    expect(result).toContain("annotation");
   });
 });

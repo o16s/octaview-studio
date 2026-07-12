@@ -245,7 +245,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: "annotate_plot",
       description:
-        "Add annotation regions (highlighted time ranges with labels) to an existing Plot panel. Annotations appear as shaded rectangles on the chart.",
+        "Add annotation regions (highlighted time ranges with labels) to a Plot panel. Use the panel ID returned by add_panel or from get_current_layout. Annotations appear as shaded colored rectangles on the chart. Times are elapsed seconds from recording start.",
       parameters: {
         type: "object",
         properties: {

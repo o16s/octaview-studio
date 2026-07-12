@@ -373,15 +373,16 @@ export function createToolExecutor(
         color?: string;
       }>;
 
-      if (!ctx.currentLayout.configById[panelId]) {
-        return `Panel "${panelId}" not found in the current layout.`;
-      }
-
       ctx.savePanelConfigs({
         configs: [
           {
             id: panelId,
-            config: { annotations },
+            config: {
+              annotations: annotations.map((a) => ({
+                ...a,
+                enabled: true,
+              })),
+            },
             override: false,
           },
         ],
