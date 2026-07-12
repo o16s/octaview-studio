@@ -190,7 +190,7 @@ export default function AgentChat(): ReactElement {
     );
   }
 
-  const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+  const visibleMessages = messages.filter((m) => (m.role === "user" || m.role === "assistant") && m.content);
 
   return (
     <div className={classes.container}>
