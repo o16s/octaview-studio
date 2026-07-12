@@ -65,11 +65,12 @@ Topic names come directly from the data source:
 - **ROS topics** have a leading `/` (e.g. `/camera/image`)
 - **MCAP/Foxglove WebSocket topics** often do NOT have a leading `/` (e.g. `sick1/image`)
 
-**MessagePath syntax** (used by Plot, RawMessages panels) always prepends `/`:
-- Topic `sensors/imu` → Plot path `/sensors/imu.linear_acceleration.x`
-- Topic `/odom` → Plot path `/odom.pose.position.x`
+**MessagePath syntax** (used by Plot, RawMessages panels) uses the topic name as-is:
+- Topic `sensors/imu` → Plot path `sensors/imu.linear_acceleration.x` (no added slash)
+- Topic `/odom` → Plot path `/odom.pose.position.x` (slash is part of the topic name)
 
-The system prompt instructs the model about this convention.
+The parser (`@foxglove/message-path`) handles both slashed and unslashed topic names.
+The rule: use the EXACT topic name from the data source, do NOT prepend a `/`.
 
 ## Example Queries
 

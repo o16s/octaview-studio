@@ -20,21 +20,22 @@ ${panelTypes.map((t) => `- ${t}`).join("\n")}
   The imageTopic value must be the EXACT topic name as returned by list_topics.
 
 **Plot panel** — time-series plots:
-  { "paths": [{ "value": "/<topicName>.<field>.<subfield>", "enabled": true, "timestampMethod": "receiveTime" }] }
+  { "paths": [{ "value": "<topicName>.<field>.<subfield>", "enabled": true, "timestampMethod": "receiveTime" }] }
   IMPORTANT rules for Plot paths:
   - Always use "timestampMethod": "receiveTime" (this is required for data to appear)
-  - Paths use MessagePath syntax: ALWAYS start with "/" then the topic name, then "." separated field access
-  - If the topic name is "sensors/imu" (no leading slash in list_topics), the path value is "/sensors/imu.linear_acceleration.x"
-  - If the topic is "/sensors/imu" (already has slash), the path is "/sensors/imu.linear_acceleration.x"
+  - The path value is the EXACT topic name from list_topics, followed by "." and field names
+  - Do NOT add a leading "/" — use the topic name exactly as returned by list_topics
+  - Example: if list_topics returns topic "sensors/imu", the path is "sensors/imu.linear_acceleration.x"
+  - Example: if list_topics returns topic "/odom", the path is "/odom.pose.position.x" (slash is part of the name)
   - Use get_topic_fields or search_topic_fields to discover available fields before building paths
 
 **3D panel** — 3D visualization (auto-subscribes to relevant topics):
   {}
 
 **RawMessages panel** — inspect raw message data:
-  { "topicPath": "/<topicName>" }
-  Uses the same MessagePath syntax: always prepend "/" then the exact topic name.
-  Example: topic "gps/fix" → topicPath is "/gps/fix". Topic "/odom" → topicPath is "/odom".
+  { "topicPath": "<topicName>" }
+  Use the EXACT topic name from list_topics. Do NOT add a leading "/".
+  Example: topic "gps/fix" → topicPath is "gps/fix". Topic "/odom" → topicPath is "/odom".
 
 ## Layout Structure
 
