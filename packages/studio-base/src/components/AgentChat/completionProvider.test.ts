@@ -104,6 +104,55 @@ describe("createWebLLMProvider", () => {
     });
   });
 
+  it("converts system messages to user messages when tools are present", async () => {
+    const mockEngine = {
+      chat: {
+        completions: {
+          create: jest.fn().mockResolvedValue({ choices: [{ message: { content: "ok" } }] }),
+        },
+      },
+    };
+
+    const provider = createWebLLMProvider(mockEngine as any);
+    const messages: ChatMessage[] = [
+      { role: "system", content: "You are helpful." },
+      { role: "user", content: "Hi" },
+    ];
+    const tools: ToolDefinition[] = [
+      { type: "function", function: { name: "foo", description: "bar", parameters: {} } },
+    ];
+
+    await provider({ messages, tools });
+
+    const sentMessages = mockEngine.chat.completions.create.mock.calls[0][0].messages;
+    // System message should be converted to user with [Instructions] prefix
+    expect(sentMessages[0].role).toBe("user");
+    expect(sentMessages[0].content).toContain("You are helpful.");
+    expect(sentMessages[1].role).toBe("user");
+    expect(sentMessages[1].content).toBe("Hi");
+  });
+
+  it("keeps system messages when no tools are present", async () => {
+    const mockEngine = {
+      chat: {
+        completions: {
+          create: jest.fn().mockResolvedValue({ choices: [{ message: { content: "ok" } }] }),
+        },
+      },
+    };
+
+    const provider = createWebLLMProvider(mockEngine as any);
+    const messages: ChatMessage[] = [
+      { role: "system", content: "You are helpful." },
+      { role: "user", content: "Hi" },
+    ];
+
+    await provider({ messages, tools: [] });
+
+    const sentMessages = mockEngine.chat.completions.create.mock.calls[0][0].messages;
+    expect(sentMessages[0].role).toBe("system");
+  });
+
   it("passes empty tools array without omitting", async () => {
     const mockEngine = {
       chat: {
