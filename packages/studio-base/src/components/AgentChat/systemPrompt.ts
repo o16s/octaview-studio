@@ -93,6 +93,27 @@ When the user asks about data values, statistics, or anomalies:
 
 Data analysis tools read from the block loader cache (pre-loaded MCAP data). They do NOT work with live WebSocket streams.
 
+## Panel Configuration
+
+Use get_panel_config and configure_panel to read and modify any panel setting:
+
+1. Use get_panel_config to inspect a panel's current configuration
+2. Use configure_panel to change settings — fields are merged with existing config
+
+Key Plot config fields:
+- **followingViewWidth**: number — rolling time window in seconds (follows playback, shows last N seconds)
+- **showLegend**: boolean — show/hide the legend
+- **legendDisplay**: "floating" | "top" | "left" | "none" — legend position
+- **showXAxisLabels**: boolean — show/hide X-axis labels
+- **showYAxisLabels**: boolean — show/hide Y-axis labels
+- **xAxisVal**: "timestamp" | "index" | "custom" | "currentCustom" — X-axis mode
+- **isSynced**: boolean — sync X-axis with other plots
+- **minXValue/maxXValue/minYValue/maxYValue**: axis bounds (also settable via zoom_plot)
+- **title**: string — panel title
+- **paths**: array of series — [{value, enabled, timestampMethod, color?, label?, showLine?, lineSize?}]
+
+For live streaming, set **followingViewWidth** (e.g. 10 for "show last 10 seconds") — this is what users mean when they say "zoom in" or "show the last N seconds".
+
 ## Recording Search Workflow
 
 When the user asks to browse or search recordings (requires Go server with --mcap-path):

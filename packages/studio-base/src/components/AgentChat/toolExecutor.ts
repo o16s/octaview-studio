@@ -396,6 +396,7 @@ export function createToolExecutor(
       if (args.maxX != undefined) config.maxXValue = args.maxX as number;
       if (args.minY != undefined) config.minYValue = args.minY as number;
       if (args.maxY != undefined) config.maxYValue = args.maxY as number;
+      if (args.rangeSeconds != undefined) config.followingViewWidth = args.rangeSeconds as number;
 
       ctx.savePanelConfigs({
         configs: [{ id: panelId, config, override: false }],
@@ -415,6 +416,7 @@ export function createToolExecutor(
               maxXValue: undefined,
               minYValue: undefined,
               maxYValue: undefined,
+              followingViewWidth: undefined,
             },
             override: false,
           },
@@ -449,6 +451,23 @@ export function createToolExecutor(
       });
 
       return `Added ${annotations.length} annotation(s) to ${panelId}.`;
+    },
+
+    get_panel_config: async (args): Promise<string> => {
+      const panelId = args.panelId as string;
+      const config = ctx.currentLayout.configById[panelId] ?? {};
+      return JSON.stringify(config, undefined, 2);
+    },
+
+    configure_panel: async (args): Promise<string> => {
+      const panelId = args.panelId as string;
+      const config = args.config as Record<string, unknown>;
+
+      ctx.savePanelConfigs({
+        configs: [{ id: panelId, config, override: false }],
+      });
+
+      return `Updated config for ${panelId}.`;
     },
   };
 

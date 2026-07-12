@@ -686,9 +686,21 @@ describe("createToolExecutor", () => {
     expect(config.maxYValue).toBe(100);
   });
 
+  it("zoom_plot sets followingViewWidth for rolling window", async () => {
+    const savePanelConfigs = jest.fn();
+    const ctx = makeContext({ savePanelConfigs });
+    const execute = createToolExecutor(ctx);
+
+    const result = await execute("zoom_plot", { panelId: "Plot!abc", rangeSeconds: 10 });
+
+    const config = savePanelConfigs.mock.calls[0][0].configs[0].config;
+    expect(config.followingViewWidth).toBe(10);
+    expect(result).toContain("Plot!abc");
+  });
+
   // --- reset_plot_view ---
 
-  it("reset_plot_view clears axis bounds on a Plot panel", async () => {
+  it("reset_plot_view clears axis bounds and followingViewWidth", async () => {
     const savePanelConfigs = jest.fn();
     const ctx = makeContext({ savePanelConfigs });
     const execute = createToolExecutor(ctx);
@@ -704,6 +716,7 @@ describe("createToolExecutor", () => {
             maxXValue: undefined,
             minYValue: undefined,
             maxYValue: undefined,
+            followingViewWidth: undefined,
           },
           override: false,
         },
@@ -727,5 +740,61 @@ describe("createToolExecutor", () => {
 
     expect(savePanelConfigs).toHaveBeenCalledTimes(1);
     expect(result).toContain("annotation");
+  });
+
+  // --- get_panel_config ---
+
+  it("get_panel_config returns config for a panel", async () => {
+    const ctx = makeContext({
+      currentLayout: {
+        layout: "Plot!abc",
+        configById: {
+          "Plot!abc": {
+            paths: [{ value: "/imu.accel.x", enabled: true }],
+            showLegend: true,
+            followingViewWidth: 10,
+          },
+        },
+      },
+    });
+    const execute = createToolExecutor(ctx);
+
+    const result = await execute("get_panel_config", { panelId: "Plot!abc" });
+    const parsed = JSON.parse(result);
+    expect(parsed.showLegend).toBe(true);
+    expect(parsed.followingViewWidth).toBe(10);
+    expect(parsed.paths).toHaveLength(1);
+  });
+
+  it("get_panel_config returns empty object for unknown panel", async () => {
+    const ctx = makeContext();
+    const execute = createToolExecutor(ctx);
+
+    const result = await execute("get_panel_config", { panelId: "Plot!unknown" });
+    expect(JSON.parse(result)).toEqual({});
+  });
+
+  // --- configure_panel ---
+
+  it("configure_panel merges config into existing panel config", async () => {
+    const savePanelConfigs = jest.fn();
+    const ctx = makeContext({ savePanelConfigs });
+    const execute = createToolExecutor(ctx);
+
+    const result = await execute("configure_panel", {
+      panelId: "Plot!abc",
+      config: { showLegend: false, followingViewWidth: 30 },
+    });
+
+    expect(savePanelConfigs).toHaveBeenCalledWith({
+      configs: [
+        {
+          id: "Plot!abc",
+          config: { showLegend: false, followingViewWidth: 30 },
+          override: false,
+        },
+      ],
+    });
+    expect(result).toContain("Plot!abc");
   });
 });

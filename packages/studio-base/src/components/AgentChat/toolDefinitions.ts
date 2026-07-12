@@ -254,6 +254,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           maxX: { type: "number", description: "Maximum X-axis value (elapsed seconds)" },
           minY: { type: "number", description: "Minimum Y-axis value" },
           maxY: { type: "number", description: "Maximum Y-axis value" },
+          rangeSeconds: { type: "number", description: "Set a rolling time window of N seconds (follows playback). Overrides static X bounds." },
         },
         required: ["panelId"],
       },
@@ -300,6 +301,43 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           },
         },
         required: ["panelId", "annotations"],
+      },
+    },
+  },
+
+  // --- Panel Config Tools ---
+
+  {
+    type: "function",
+    function: {
+      name: "get_panel_config",
+      description:
+        "Get the full configuration object for a specific panel. Returns all config fields (paths, legend, axis settings, etc.). Use this to inspect current settings before modifying them.",
+      parameters: {
+        type: "object",
+        properties: {
+          panelId: { type: "string", description: "Panel ID (e.g. 'Plot!abc123')" },
+        },
+        required: ["panelId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "configure_panel",
+      description:
+        "Set arbitrary config fields on any panel. Merges with existing config (does not replace). Use get_panel_config first to see available fields. Common Plot fields: paths, showLegend, legendDisplay ('floating'|'top'|'left'|'none'), showXAxisLabels, showYAxisLabels, followingViewWidth (rolling window seconds), minXValue, maxXValue, minYValue, maxYValue, xAxisVal ('timestamp'|'index'|'custom'), isSynced, title. Common Image fields: imageTopic. Common Gauge fields: path, minValue, maxValue, colorMode, colorMap, reverse. Common Indicator fields: path, style, rules, fallbackColor, fallbackLabel.",
+      parameters: {
+        type: "object",
+        properties: {
+          panelId: { type: "string", description: "Panel ID (e.g. 'Plot!abc123')" },
+          config: {
+            type: "object",
+            description: "Config fields to set. These are merged into the existing config.",
+          },
+        },
+        required: ["panelId", "config"],
       },
     },
   },
