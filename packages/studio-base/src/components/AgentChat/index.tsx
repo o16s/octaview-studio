@@ -155,7 +155,7 @@ export default function AgentChat(): ReactElement {
   const startTime = useMessagePipeline(selectStartTime);
   const panelCatalog = usePanelCatalog();
   const { selectSource } = usePlayerSelection();
-  const { addPanel, changePanelLayout, savePanelConfigs, getCurrentLayoutState } =
+  const { addPanel, changePanelLayout, savePanelConfigs, setCurrentLayout, getCurrentLayoutState } =
     useCurrentLayoutActions();
 
   const panelTypes = useMemo(
@@ -210,13 +210,26 @@ export default function AgentChat(): ReactElement {
       addPanel,
       changePanelLayout,
       savePanelConfigs,
+      setCurrentLayout: (data) => {
+        const layoutState = getCurrentLayoutState();
+        const existingData = layoutState.selectedLayout?.data;
+        setCurrentLayout({
+          data: {
+            configById: data.configById as Record<string, Record<string, unknown>>,
+            layout: data.layout,
+            globalVariables: existingData?.globalVariables ?? {},
+            userNodes: existingData?.userNodes ?? {},
+            playbackConfig: existingData?.playbackConfig ?? { speed: 1 },
+          },
+        });
+      },
       seekPlayback,
       selectSource,
       getBlockMessages,
       incidents,
       startTime,
     };
-  }, [topics, datatypes, panelTypes, getCurrentLayoutState, addPanel, changePanelLayout, savePanelConfigs, seekPlayback, selectSource, getBlockMessages, incidents, startTime]);
+  }, [topics, datatypes, panelTypes, getCurrentLayoutState, addPanel, changePanelLayout, savePanelConfigs, setCurrentLayout, seekPlayback, selectSource, getBlockMessages, incidents, startTime]);
 
   // Keep a ref so tool calls mid-loop always see the latest context
   const studioContextRef = useRef(studioContext);

@@ -33,6 +33,7 @@ export type StudioContext = {
   addPanel: (payload: AddPanelPayload) => void;
   changePanelLayout: (payload: ChangePanelLayoutPayload) => void;
   savePanelConfigs: (payload: SaveConfigsPayload) => void;
+  setCurrentLayout: (data: { layout: MosaicNode<string>; configById: Record<string, unknown> }) => void;
   seekPlayback: ((time: Time) => void) | undefined;
   selectSource: (sourceId: string, args?: DataSourceArgs) => void;
   getBlockMessages: (topic: string) => MessageEvent[];
@@ -202,15 +203,16 @@ export function createToolExecutor(
       }
 
       const remappedLayout = remapLayout(layout);
-      // Save configs BEFORE changing layout so panels have their config when they mount
-      ctx.savePanelConfigs({
-        configs: Object.entries(configs).map(([llmId, config]) => ({
-          id: idMap.get(llmId) ?? llmId,
-          config,
-          override: true,
-        })),
-      });
-      ctx.changePanelLayout({ layout: remappedLayout });
+
+      // Build configById with remapped IDs
+      const configById: Record<string, unknown> = {};
+      for (const [llmId, config] of Object.entries(configs)) {
+        configById[idMap.get(llmId) ?? llmId] = config;
+      }
+
+      // Set layout and configs atomically to prevent the Image panel's
+      // auto-select from firing before configs are applied
+      ctx.setCurrentLayout({ layout: remappedLayout, configById });
       return "Layout updated";
     },
 

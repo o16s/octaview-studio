@@ -19,6 +19,7 @@ describe("createToolExecutor", () => {
     addPanel: jest.fn(),
     changePanelLayout: jest.fn(),
     savePanelConfigs: jest.fn(),
+    setCurrentLayout: jest.fn(),
     seekPlayback: jest.fn(),
     selectSource: jest.fn(),
     getBlockMessages: jest.fn().mockReturnValue([]),
@@ -100,9 +101,8 @@ describe("createToolExecutor", () => {
   });
 
   it("set_layout generates unique panel IDs and remaps layout and configs", async () => {
-    const changePanelLayout = jest.fn();
-    const savePanelConfigs = jest.fn();
-    const ctx = makeContext({ changePanelLayout, savePanelConfigs });
+    const setCurrentLayout = jest.fn();
+    const ctx = makeContext({ setCurrentLayout });
     const execute = createToolExecutor(ctx);
 
     const layout = { direction: "row", first: "Image!x1", second: "Plot!x2" };
@@ -113,27 +113,22 @@ describe("createToolExecutor", () => {
 
     const result = await execute("set_layout", { layout, configs });
 
-    // Layout should have new unique IDs (not the LLM-provided ones)
-    const appliedLayout = changePanelLayout.mock.calls[0][0].layout;
+    const call = setCurrentLayout.mock.calls[0]![0];
+    const appliedLayout = call.layout;
     expect(appliedLayout.first).toMatch(/^Image!/);
     expect(appliedLayout.second).toMatch(/^Plot!/);
     expect(appliedLayout.first).not.toBe("Image!x1");
     expect(appliedLayout.second).not.toBe("Plot!x2");
 
     // Configs should use the new IDs
-    const appliedConfigs = savePanelConfigs.mock.calls[0][0].configs;
-    expect(appliedConfigs).toHaveLength(2);
-    expect(appliedConfigs[0].id).toBe(appliedLayout.first);
-    expect(appliedConfigs[0].config).toEqual({ topic: "/camera/image" });
-    expect(appliedConfigs[1].id).toBe(appliedLayout.second);
-    expect(appliedConfigs[1].config).toEqual({ paths: [] });
+    expect(call.configById[appliedLayout.first]).toEqual({ topic: "/camera/image" });
+    expect(call.configById[appliedLayout.second]).toEqual({ paths: [] });
     expect(result).toBe("Layout updated");
   });
 
   it("set_layout assigns unique IDs to duplicate panel types", async () => {
-    const changePanelLayout = jest.fn();
-    const savePanelConfigs = jest.fn();
-    const ctx = makeContext({ changePanelLayout, savePanelConfigs });
+    const setCurrentLayout = jest.fn();
+    const ctx = makeContext({ setCurrentLayout });
     const execute = createToolExecutor(ctx);
 
     // 4 Image panels in a 2x2 grid — LLM uses distinct placeholder IDs
@@ -151,7 +146,8 @@ describe("createToolExecutor", () => {
 
     await execute("set_layout", { layout, configs });
 
-    const appliedLayout = changePanelLayout.mock.calls[0][0].layout;
+    const call = setCurrentLayout.mock.calls[0]![0];
+    const appliedLayout = call.layout;
     const allIds = [
       appliedLayout.first.first,
       appliedLayout.first.second,
@@ -165,13 +161,10 @@ describe("createToolExecutor", () => {
     allIds.forEach((id: string) => expect(id).toMatch(/^Image!/));
 
     // Each config should map to the correct topic
-    const appliedConfigs = savePanelConfigs.mock.calls[0][0].configs;
-    expect(appliedConfigs).toHaveLength(4);
-    const configMap = new Map(appliedConfigs.map((c: { id: string; config: Record<string, unknown> }) => [c.id, c.config]));
-    expect(configMap.get(allIds[0])).toEqual({ imageTopic: "/cam1" });
-    expect(configMap.get(allIds[1])).toEqual({ imageTopic: "/cam2" });
-    expect(configMap.get(allIds[2])).toEqual({ imageTopic: "/cam3" });
-    expect(configMap.get(allIds[3])).toEqual({ imageTopic: "/cam4" });
+    expect(call.configById[allIds[0]]).toEqual({ imageTopic: "/cam1" });
+    expect(call.configById[allIds[1]]).toEqual({ imageTopic: "/cam2" });
+    expect(call.configById[allIds[2]]).toEqual({ imageTopic: "/cam3" });
+    expect(call.configById[allIds[3]]).toEqual({ imageTopic: "/cam4" });
   });
 
   it("get_topic_fields returns field paths for a topic", async () => {
