@@ -10,6 +10,7 @@ import {
   WAITING_FOR_IMAGES_EMPTY_HUD_ID,
   WAITING_FOR_CALIBRATION_HUD_ID,
   WAITING_FOR_SYNC_EMPTY_HUD_ID,
+  WAITING_FOR_KEYFRAME_HUD_ID,
 } from "./renderables/ImageMode/constants";
 
 export type HUDItem = {
@@ -37,6 +38,7 @@ export const HUD_ID_PRIORITIES = [
   WAITING_FOR_IMAGES_EMPTY_HUD_ID,
   WAITING_FOR_CALIBRATION_HUD_ID,
   WAITING_FOR_SYNC_EMPTY_HUD_ID,
+  WAITING_FOR_KEYFRAME_HUD_ID,
 ].reverse();
 
 export class HUDItemManager {

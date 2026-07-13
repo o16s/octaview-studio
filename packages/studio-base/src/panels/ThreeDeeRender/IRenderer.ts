@@ -218,6 +218,7 @@ export interface IRenderer extends EventEmitter<RendererEvents> {
   config: Immutable<RendererConfig>;
   settings: SettingsManager;
   hud: HUDItemManager;
+  allFrames: readonly MessageEvent[] | undefined;
   debugPicking: boolean;
   // [{ name, datatype }]
   topics: ReadonlyArray<Topic> | undefined;

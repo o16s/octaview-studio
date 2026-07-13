@@ -179,6 +179,8 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
   // topicName -> RendererSubscription[]
   public topicSubscriptions = new Map<string, RendererSubscription[]>();
 
+  /** The most recent allFrames array passed to handleAllFramesMessages */
+  public allFrames: readonly MessageEvent[] | undefined;
   /** HUD manager instance */
   public hud;
   /** Items to display in the HUD */
@@ -558,6 +560,7 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
    * @returns {boolean} - whether the allFramesCursor has been updated and new messages were read in
    */
   public handleAllFramesMessages(allFrames?: readonly MessageEvent[]): boolean {
+    this.allFrames = allFrames;
     if (!allFrames || allFrames.length === 0) {
       return false;
     }

@@ -35,6 +35,7 @@ import {
   AnyImage,
   getFrameIdFromImage,
 } from "@foxglove/studio-base/panels/ThreeDeeRender/renderables/Images/ImageTypes";
+import { containsKeyframe } from "@foxglove/studio-base/panels/ThreeDeeRender/renderables/Images/H264Decoder";
 import { IMAGE_DEFAULT_COLOR_MODE_SETTINGS } from "@foxglove/studio-base/panels/ThreeDeeRender/renderables/Images/decodeImage";
 import {
   cameraInfosEqual,
@@ -299,7 +300,8 @@ export class ImageMode
         subscription: {
           handler: this.messageHandler.handleCompressedVideo,
           shouldSubscribe: this.imageShouldSubscribe,
-          filterQueue: this.#filterMessageQueue.bind(this),
+          preload: true,
+          filterQueue: this.#filterVideoMessageQueue.bind(this),
         },
       },
     ];
@@ -312,6 +314,21 @@ export class ImageMode
       return msgs.slice(msgs.length - 1);
     }
     return msgs;
+  }
+
+  /** Video-specific queue filter: scan backward for the last keyframe and keep from there onward
+   * so the decoder receives SPS → PPS → IDR → delta frames in sequence. */
+  #filterVideoMessageQueue(msgs: MessageEvent[]): MessageEvent[] {
+    if (this.getImageModeSettings().synchronize) {
+      return msgs;
+    }
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const data = (msgs[i]!.message as { data: Uint8Array }).data;
+      if (data instanceof Uint8Array && containsKeyframe(data)) {
+        return msgs.slice(i);
+      }
+    }
+    return msgs.slice(-1);
   }
 
   public override dispose(): void {

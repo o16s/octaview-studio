@@ -22,7 +22,9 @@ type PendingFrame = {
 /**
  * Parses H.264 Annex B byte stream to find NAL unit boundaries and types.
  */
-function findNalUnits(data: Uint8Array): Array<{ offset: number; length: number; type: number }> {
+export function findNalUnits(
+  data: Uint8Array,
+): Array<{ offset: number; length: number; type: number }> {
   const nalUnits: Array<{ offset: number; length: number; type: number }> = [];
   let i = 0;
 
@@ -58,6 +60,13 @@ function findNalUnits(data: Uint8Array): Array<{ offset: number; length: number;
   }
 
   return nalUnits;
+}
+
+/**
+ * Returns true if the given H.264 Annex B data contains an IDR (keyframe) NAL unit.
+ */
+export function containsKeyframe(data: Uint8Array): boolean {
+  return findNalUnits(data).some((nal) => nal.type === 5);
 }
 
 /**

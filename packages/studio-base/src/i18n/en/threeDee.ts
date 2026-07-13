@@ -160,5 +160,6 @@ export const threeDee = {
   waitingForCalibrationAndImages: "Waiting for messages…",
   waitingForCalibration: "Waiting for calibration messages…",
   waitingForImages: "Waiting for image messages…",
+  waitingForKeyframe: "Waiting for video keyframe…",
   waitingForSyncAnnotations: "Waiting for synchronized annotations…",
 };

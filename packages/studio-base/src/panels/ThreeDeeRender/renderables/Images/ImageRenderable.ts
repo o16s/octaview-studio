@@ -8,7 +8,8 @@ import { assert } from "ts-essentials";
 
 import { PinholeCameraModel } from "@foxglove/den/image";
 import Logger from "@foxglove/log";
-import { toNanoSec } from "@foxglove/rostime";
+import { fromNanoSec, isLessThan, toNanoSec } from "@foxglove/rostime";
+import { MessageEvent } from "@foxglove/studio";
 import { IRenderer } from "@foxglove/studio-base/panels/ThreeDeeRender/IRenderer";
 import { BaseUserData, Renderable } from "@foxglove/studio-base/panels/ThreeDeeRender/Renderable";
 import { stringToRgba } from "@foxglove/studio-base/panels/ThreeDeeRender/color";
@@ -17,10 +18,16 @@ import { projectPixel } from "@foxglove/studio-base/panels/ThreeDeeRender/render
 import { RosValue } from "@foxglove/studio-base/players/types";
 
 import { AnyImage } from "./ImageTypes";
-import { H264Decoder, NoFrameError, isVideoFormat } from "./H264Decoder";
+import { H264Decoder, NoFrameError, isVideoFormat, containsKeyframe } from "./H264Decoder";
 import { decodeCompressedImageToBitmap } from "./decodeImage";
 import { CameraInfo } from "../../ros";
-import { DECODE_IMAGE_ERR_KEY, IMAGE_TOPIC_PATH } from "../ImageMode/constants";
+import {
+  DECODE_IMAGE_ERR_KEY,
+  IMAGE_MODE_HUD_GROUP_ID,
+  IMAGE_TOPIC_PATH,
+  WAITING_FOR_KEYFRAME_HUD_ID,
+} from "../ImageMode/constants";
+import { t3D } from "../../t3D";
 import { ColorModeSettings } from "../colorMode";
 
 const log = Logger.getLogger(__filename);
@@ -79,6 +86,7 @@ export class ImageRenderable extends Renderable<ImageUserData> {
   #showingErrorImage = false;
 
   #disposed = false;
+  #primingInProgress = false;
 
   public constructor(topicName: string, renderer: IRenderer, userData: ImageUserData) {
     super(topicName, renderer, userData);
@@ -196,20 +204,37 @@ export class ImageRenderable extends Renderable<ImageUserData> {
         this.update();
         this.#showingErrorImage = false;
 
+        // Clear the waiting-for-keyframe HUD on successful decode
+        this.renderer.hud.displayIfTrue(false, {
+          id: WAITING_FOR_KEYFRAME_HUD_ID,
+          group: IMAGE_MODE_HUD_GROUP_ID,
+          getMessage: () => t3D("waitingForKeyframe"),
+          displayType: "notice",
+        });
+
         onDecoded?.();
         this.removeError(DECODE_IMAGE_ERR_KEY);
         this.renderer.queueAnimationFrame();
       })
       .catch((err) => {
-        // NoFrameError means the message contained only parameter sets (SPS/PPS)
-        // with no decodable frame - this is expected for H.264 streams
-        if (err instanceof NoFrameError) {
-          return;
-        }
-        log.error(err);
         if (this.isDisposed()) {
           return;
         }
+        // NoFrameError means the decoder is waiting for a keyframe — show HUD and attempt priming
+        if (err instanceof NoFrameError) {
+          if ((err.message as string).includes("keyframe")) {
+            this.renderer.hud.displayIfTrue(true, {
+              id: WAITING_FOR_KEYFRAME_HUD_ID,
+              group: IMAGE_MODE_HUD_GROUP_ID,
+              getMessage: () => t3D("waitingForKeyframe"),
+              displayType: "notice",
+            });
+            this.renderer.queueAnimationFrame();
+            this.#requestKeyframePriming();
+          }
+          return;
+        }
+        log.error(err);
         // avoid needing to recreate error image if it already shown
         if (!this.#showingErrorImage) {
           void this.#setErrorImage(seq, onDecoded);
@@ -233,6 +258,99 @@ export class ImageRenderable extends Renderable<ImageUserData> {
     // call ondecoded to display the error image when calibration is None
     onDecoded?.();
     this.renderer.queueAnimationFrame();
+  }
+
+  /**
+   * Scans allFrames backward from current time for this topic, finds the nearest keyframe,
+   * and feeds it (plus subsequent frames) to the H264Decoder to prime it.
+   */
+  #requestKeyframePriming(): void {
+    if (this.#primingInProgress) {
+      return;
+    }
+    const allFrames = this.renderer.allFrames;
+    if (!allFrames || allFrames.length === 0) {
+      return;
+    }
+    const topic = this.userData.topic;
+    const currentTime = fromNanoSec(this.renderer.currentTime);
+
+    // Collect messages for this topic up to currentTime, scanning backward for keyframe
+    const topicMessages: MessageEvent[] = [];
+    let keyframeIdx = -1;
+    for (let i = allFrames.length - 1; i >= 0; i--) {
+      const msg = allFrames[i]!;
+      if (isLessThan(currentTime, msg.receiveTime)) {
+        continue;
+      }
+      if (msg.topic !== topic) {
+        continue;
+      }
+      topicMessages.unshift(msg);
+      if (keyframeIdx === -1) {
+        const data = (msg.message as { data: Uint8Array }).data;
+        if (data instanceof Uint8Array && containsKeyframe(data)) {
+          keyframeIdx = 0; // it will be at index 0 since we unshift
+          break;
+        }
+      }
+    }
+
+    if (keyframeIdx === -1 || topicMessages.length === 0) {
+      return;
+    }
+
+    this.#primingInProgress = true;
+
+    // Create a fresh decoder for priming to avoid corrupting the main decoder state
+    const primingDecoder = new H264Decoder();
+    let lastBitmap: ImageBitmap | undefined;
+
+    const primeSequentially = async () => {
+      for (const msg of topicMessages) {
+        if (this.isDisposed()) {
+          break;
+        }
+        const image = msg.message as { data: Uint8Array; format: string; timestamp: { sec: number; nsec: number } };
+        const tsNanos = BigInt(image.timestamp.sec) * 1_000_000_000n + BigInt(image.timestamp.nsec);
+        try {
+          const bitmap = await primingDecoder.decode(image.data, tsNanos);
+          // Close intermediate bitmaps, only keep the last
+          if (lastBitmap != undefined) {
+            lastBitmap.close();
+          }
+          lastBitmap = bitmap;
+        } catch {
+          // Skip frames that can't be decoded during priming
+        }
+      }
+
+      primingDecoder.close();
+
+      if (this.isDisposed() || lastBitmap == undefined) {
+        lastBitmap?.close();
+        this.#primingInProgress = false;
+        return;
+      }
+
+      // Display the primed frame
+      this.#decodedImage = lastBitmap;
+      this.#textureNeedsUpdate = true;
+      this.update();
+      this.#showingErrorImage = false;
+
+      this.renderer.hud.displayIfTrue(false, {
+        id: WAITING_FOR_KEYFRAME_HUD_ID,
+        group: IMAGE_MODE_HUD_GROUP_ID,
+        getMessage: () => t3D("waitingForKeyframe"),
+        displayType: "notice",
+      });
+
+      this.renderer.queueAnimationFrame();
+      this.#primingInProgress = false;
+    };
+
+    void primeSequentially();
   }
 
   protected async decodeImage(
