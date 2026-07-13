@@ -59,6 +59,10 @@ func openIndexDB(dbPath string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open index db: %w", err)
 	}
+	// WAL mode allows concurrent readers + writer without SQLITE_BUSY.
+	// busy_timeout makes writers retry for up to 5s instead of failing immediately.
+	db.Exec("PRAGMA journal_mode=WAL")
+	db.Exec("PRAGMA busy_timeout=5000")
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS mcap_index (
 		path       TEXT PRIMARY KEY,
 		mod_time   TEXT NOT NULL,
@@ -461,6 +465,81 @@ func main() {
 		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified")
 		// http.ServeContent handles Range requests, Content-Length, and Accept-Ranges automatically
 		http.ServeContent(w, r, stat.Name(), stat.ModTime(), f)
+	})
+
+	// API: list topics in an MCAP file
+	mux.HandleFunc("/api/mcap/topics/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		relPath := strings.TrimPrefix(r.URL.Path, "/api/mcap/topics/")
+		if relPath == "" {
+			http.Error(w, "Missing file path", http.StatusBadRequest)
+			return
+		}
+		relPath = strings.TrimPrefix(relPath, absPath)
+		relPath = strings.TrimPrefix(relPath, "/")
+		cleanPath := filepath.Clean(relPath)
+		if strings.Contains(cleanPath, "..") {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+		fullPath := filepath.Join(absPath, cleanPath)
+		if !strings.HasPrefix(fullPath, absPath) {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+
+		f, err := os.Open(fullPath)
+		if err != nil {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+		defer f.Close()
+
+		reader, err := mcap.NewReader(f)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to open MCAP: %v", err), http.StatusInternalServerError)
+			return
+		}
+		defer reader.Close()
+
+		info, err := reader.Info()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to read MCAP info: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		type TopicInfo struct {
+			Topic           string `json:"topic"`
+			SchemaName      string `json:"schemaName"`
+			MessageEncoding string `json:"messageEncoding"`
+			MessageCount    uint64 `json:"messageCount,omitempty"`
+		}
+
+		var topics []TopicInfo
+		for _, ch := range info.Channels {
+			ti := TopicInfo{
+				Topic:           ch.Topic,
+				MessageEncoding: ch.MessageEncoding,
+			}
+			if schema, ok := info.Schemas[ch.SchemaID]; ok {
+				ti.SchemaName = schema.Name
+			}
+			if info.Statistics != nil {
+				ti.MessageCount = info.Statistics.ChannelMessageCounts[ch.ID]
+			}
+			topics = append(topics, ti)
+		}
+		if topics == nil {
+			topics = []TopicInfo{}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		json.NewEncoder(w).Encode(topics)
 	})
 
 	// API: index MCAP files — streams NDJSON for progressive loading.

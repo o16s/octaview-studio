@@ -237,6 +237,7 @@ These are served by the Go server (`cmd/foxglove-server/main.go`), enabled when 
 |--------|------|-------------|
 | GET | `/api/mcap/files` | List all MCAP files (JSON array) |
 | GET | `/api/mcap/files/<path>` | Serve an individual MCAP file (supports HTTP Range requests) |
+| GET | `/api/mcap/topics/<path>` | List topics in an MCAP file (JSON array with topic, schemaName, messageEncoding, messageCount) |
 | GET | `/api/mcap/index` | Stream NDJSON index with time ranges per file. Optional `?start=<unix>&end=<unix>` filters to files overlapping that window. |
 | GET | `/api/mcap/video/<path>` | Remux an H.264 video topic from an MCAP file to streamable MP4 |
 | GET | `/api/downloads` | List desktop installer files (JSON array, requires `--downloads-path`) |
