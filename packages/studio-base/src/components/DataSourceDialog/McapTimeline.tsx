@@ -179,12 +179,23 @@ const useStyles = makeStyles()((theme) => ({
   },
   timelineWrapper: {
     display: "flex",
-    overflowX: "hidden",
-    overflowY: "auto",
+    flexDirection: "column",
     border: `1px solid ${theme.palette.divider}`,
     borderRadius: theme.shape.borderRadius,
     flex: 1,
     minHeight: 200,
+  },
+  timelineHeader: {
+    display: "flex",
+    flexShrink: 0,
+    borderBottom: `1px solid ${theme.palette.divider}`,
+    backgroundColor: theme.palette.background.paper,
+  },
+  timelineBody: {
+    display: "flex",
+    overflowX: "hidden",
+    overflowY: "auto",
+    flex: 1,
     position: "relative",
   },
   labelColumn: {
@@ -208,8 +219,8 @@ const useStyles = makeStyles()((theme) => ({
     display: "flex",
     alignItems: "center",
     padding: theme.spacing(0, 1.5),
-    borderBottom: `1px solid ${theme.palette.divider}`,
-    backgroundColor: theme.palette.action.hover,
+    boxSizing: "border-box" as const,
+    borderRight: `1px solid ${theme.palette.divider}`,
   },
   labelRow: {
     height: ROW_HEIGHT,
@@ -591,7 +602,8 @@ export default function McapTimeline(): JSX.Element {
   // SVG dimensions — add an incident row at top when incidents are present
   const svgWidth = Math.max(svgColumnWidth, 200);
   const incidentRowOffset = hasIncidents ? INCIDENT_ROW_HEIGHT : 0;
-  const svgHeight = HEADER_HEIGHT + incidentRowOffset + totalRowsHeight;
+  const svgBodyHeight = incidentRowOffset + totalRowsHeight;
+  const svgHeight = svgBodyHeight; // body SVG only (header is separate)
 
   // Time-to-pixel conversion
   const timeToX = useCallback(
@@ -606,7 +618,7 @@ export default function McapTimeline(): JSX.Element {
       const [, folderFiles] = folders[folderIdx]!;
       const { laneMap } = folderLanes[folderIdx]!;
       const color = COLORS[folderIdx % COLORS.length]!;
-      const folderBaseY = HEADER_HEIGHT + incidentRowOffset + folderYOffsets[folderIdx]!;
+      const folderBaseY = incidentRowOffset + folderYOffsets[folderIdx]!;
 
       for (const file of folderFiles) {
         if (file.endTime < viewStart || file.startTime > viewEnd) {
@@ -693,7 +705,7 @@ export default function McapTimeline(): JSX.Element {
       }
       const rect = svg.getBoundingClientRect();
       const y = e.clientY - rect.top;
-      if (y < HEADER_HEIGHT + incidentRowOffset) {
+      if (y < incidentRowOffset) {
         return;
       }
       const x = e.clientX - rect.left;
@@ -729,7 +741,7 @@ export default function McapTimeline(): JSX.Element {
 
       // Check incident markers first
       if (hasIncidents) {
-        const incidentY = HEADER_HEIGHT + INCIDENT_ROW_HEIGHT / 2;
+        const incidentY = INCIDENT_ROW_HEIGHT / 2;
         for (const inc of incidentMarkers) {
           const ix = timeToX(inc.timeSec);
           const dist = Math.sqrt((mx - ix) ** 2 + (my - incidentY) ** 2);
@@ -1178,10 +1190,10 @@ export default function McapTimeline(): JSX.Element {
         )}
 
         {/* Timeline */}
-        {files.length > 0 && <div ref={wrapperRef} className={classes.timelineWrapper}>
-          {/* Left: folder labels */}
-          <div className={classes.labelColumn} style={{ width: labelWidth, minWidth: labelWidth }}>
-            <div className={classes.labelHeader}>
+        {files.length > 0 && <div className={classes.timelineWrapper}>
+          {/* Fixed header row */}
+          <div className={classes.timelineHeader}>
+            <div className={classes.labelHeader} style={{ width: labelWidth, minWidth: labelWidth }}>
               <Typography variant="caption" fontWeight={600} sx={{ flexGrow: 1 }}>
                 Folder
               </Typography>
@@ -1200,6 +1212,38 @@ export default function McapTimeline(): JSX.Element {
                 {selectedRows.size === allFolders.size ? "Deselect all" : "Select all"}
               </Link>
             </div>
+            {/* Header time axis SVG */}
+            <div ref={svgColumnRef} className={classes.svgColumn}>
+              <svg
+                width={svgWidth}
+                height={HEADER_HEIGHT}
+                style={{ display: "block", userSelect: "none" }}
+              >
+                {/* Tick labels */}
+                {ticks.map((t) => {
+                  const x = timeToX(t);
+                  return (
+                    <text
+                      key={t}
+                      x={x}
+                      y={HEADER_HEIGHT - 14}
+                      textAnchor="middle"
+                      fontSize={11}
+                      fill={theme.palette.text.secondary}
+                      fontFamily={theme.typography.fontFamily}
+                    >
+                      {formatTickLabel(t, tickConfig.format)}
+                    </text>
+                  );
+                })}
+              </svg>
+            </div>
+          </div>
+
+          {/* Scrollable body */}
+          <div ref={wrapperRef} className={classes.timelineBody}>
+            {/* Left: folder labels */}
+            <div className={classes.labelColumn} style={{ width: labelWidth, minWidth: labelWidth }}>
             {hasIncidents && (
               <div
                 className={classes.labelRow}
@@ -1265,8 +1309,8 @@ export default function McapTimeline(): JSX.Element {
             />
           </div>
 
-          {/* Right: SVG timeline */}
-          <div ref={svgColumnRef} className={classes.svgColumn}>
+          {/* Right: SVG timeline (body) */}
+          <div className={classes.svgColumn}>
             <svg
               ref={svgRef}
               width={svgWidth}
@@ -1276,20 +1320,11 @@ export default function McapTimeline(): JSX.Element {
               onMouseMove={handleMouseMove}
               onMouseLeave={handleMouseLeave}
             >
-              {/* Header background */}
-              <rect
-                x={0}
-                y={0}
-                width={svgWidth}
-                height={HEADER_HEIGHT}
-                fill={theme.palette.action.hover}
-              />
-
               {/* Incidents row background */}
               {hasIncidents && (
                 <rect
                   x={0}
-                  y={HEADER_HEIGHT}
+                  y={0}
                   width={svgWidth}
                   height={INCIDENT_ROW_HEIGHT}
                   fill={theme.palette.action.hover}
@@ -1303,7 +1338,7 @@ export default function McapTimeline(): JSX.Element {
                   <rect
                     key={folderName}
                     x={0}
-                    y={HEADER_HEIGHT + incidentRowOffset + folderYOffsets[i]!}
+                    y={incidentRowOffset + folderYOffsets[i]!}
                     width={svgWidth}
                     height={laneCount * ROW_HEIGHT}
                     fill={i % 2 === 0 ? "transparent" : theme.palette.action.hover}
@@ -1315,9 +1350,9 @@ export default function McapTimeline(): JSX.Element {
               {hasIncidents && (
                 <line
                   x1={0}
-                  y1={HEADER_HEIGHT + INCIDENT_ROW_HEIGHT}
+                  y1={INCIDENT_ROW_HEIGHT}
                   x2={svgWidth}
-                  y2={HEADER_HEIGHT + INCIDENT_ROW_HEIGHT}
+                  y2={INCIDENT_ROW_HEIGHT}
                   stroke={theme.palette.divider}
                   strokeWidth={1}
                 />
@@ -1325,7 +1360,7 @@ export default function McapTimeline(): JSX.Element {
 
               {/* Row dividers */}
               {folders.map(([folderName], i) => {
-                const divY = HEADER_HEIGHT + incidentRowOffset + folderYOffsets[i]! + folderLanes[i]!.laneCount * ROW_HEIGHT;
+                const divY = incidentRowOffset + folderYOffsets[i]! + folderLanes[i]!.laneCount * ROW_HEIGHT;
                 return (
                   <line
                     key={`div-${folderName}`}
@@ -1339,41 +1374,20 @@ export default function McapTimeline(): JSX.Element {
                 );
               })}
 
-              {/* Header bottom border */}
-              <line
-                x1={0}
-                y1={HEADER_HEIGHT}
-                x2={svgWidth}
-                y2={HEADER_HEIGHT}
-                stroke={theme.palette.divider}
-                strokeWidth={1}
-              />
-
-              {/* Tick marks and labels */}
+              {/* Tick grid lines */}
               {ticks.map((t) => {
                 const x = timeToX(t);
                 return (
-                  <g key={t}>
-                    <line
-                      x1={x}
-                      y1={HEADER_HEIGHT - 8}
-                      x2={x}
-                      y2={svgHeight}
-                      stroke={theme.palette.divider}
-                      strokeWidth={1}
-                      strokeDasharray="2,2"
-                    />
-                    <text
-                      x={x}
-                      y={HEADER_HEIGHT - 14}
-                      textAnchor="middle"
-                      fontSize={11}
-                      fill={theme.palette.text.secondary}
-                      fontFamily={theme.typography.fontFamily}
-                    >
-                      {formatTickLabel(t, tickConfig.format)}
-                    </text>
-                  </g>
+                  <line
+                    key={t}
+                    x1={x}
+                    y1={0}
+                    x2={x}
+                    y2={svgHeight}
+                    stroke={theme.palette.divider}
+                    strokeWidth={1}
+                    strokeDasharray="2,2"
+                  />
                 );
               })}
 
@@ -1409,7 +1423,7 @@ export default function McapTimeline(): JSX.Element {
                     Math.abs(inc.timeSec - urlParams.centerTime) < 1;
                   const color = SEVERITY_COLORS[inc.severity ?? "info"] ?? SEVERITY_COLORS.info!;
                   const r = isCurrent ? 7 : 5;
-                  const cy = HEADER_HEIGHT + INCIDENT_ROW_HEIGHT / 2;
+                  const cy = INCIDENT_ROW_HEIGHT / 2;
                   return (
                     <g key={`inc-${idx}`}>
                       {isCurrent && (
@@ -1442,7 +1456,7 @@ export default function McapTimeline(): JSX.Element {
                 return (
                   <line
                     x1={nowX}
-                    y1={HEADER_HEIGHT}
+                    y1={0}
                     x2={nowX}
                     y2={svgHeight}
                     stroke="#E5484D"
@@ -1456,9 +1470,9 @@ export default function McapTimeline(): JSX.Element {
               {selectionRange && (
                 <rect
                   x={timeToX(selectionRange.start)}
-                  y={HEADER_HEIGHT + incidentRowOffset}
+                  y={incidentRowOffset}
                   width={timeToX(selectionRange.end) - timeToX(selectionRange.start)}
-                  height={svgHeight - HEADER_HEIGHT - incidentRowOffset}
+                  height={svgHeight - incidentRowOffset}
                   fill={theme.palette.primary.main}
                   opacity={0.15}
                   stroke={theme.palette.primary.main}
@@ -1543,6 +1557,7 @@ export default function McapTimeline(): JSX.Element {
               </Typography>
             </div>
           )}
+        </div>
         </div>}
 
         {/* Selection info */}
