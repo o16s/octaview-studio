@@ -133,6 +133,38 @@ type DownloadProgress = {
 };
 
 type SparklineField = { topic: string; field: string; type: string };
+
+/** Merge new segments into existing ones, deduplicating by file and sorting by timestamp. */
+function mergeSegments(existing: SparklineSegment[], incoming: SparklineSegment[]): SparklineSegment[] {
+  const byFile = new Map<string, { timestamps: number[]; values: number[] }>();
+  for (const seg of [...existing, ...incoming]) {
+    const entry = byFile.get(seg.file);
+    if (entry) {
+      entry.timestamps.push(...seg.timestamps);
+      entry.values.push(...seg.values);
+    } else {
+      byFile.set(seg.file, { timestamps: [...seg.timestamps], values: [...seg.values] });
+    }
+  }
+  const result: SparklineSegment[] = [];
+  for (const [file, { timestamps, values }] of byFile) {
+    // Deduplicate and sort by timestamp
+    const indices = Array.from(timestamps.keys()).sort((a, b) => timestamps[a]! - timestamps[b]!);
+    const dedupTs: number[] = [];
+    const dedupVals: number[] = [];
+    let lastT = -Infinity;
+    for (const i of indices) {
+      if (timestamps[i]! > lastT) {
+        dedupTs.push(timestamps[i]!);
+        dedupVals.push(values[i]!);
+        lastT = timestamps[i]!;
+      }
+    }
+    result.push({ file, timestamps: dedupTs, values: dedupVals });
+  }
+  result.sort((a, b) => (a.timestamps[0] ?? 0) - (b.timestamps[0] ?? 0));
+  return result;
+}
 type SparklineSegment = { file: string; timestamps: number[]; values: number[] };
 
 const ROW_HEIGHT = 20;
@@ -487,26 +519,42 @@ export default function McapTimeline(): JSX.Element {
     return () => { controller.abort(); };
   }, [sparklinePopover, apiBase]);
 
-  // Fetch sparkline sample data (debounced on viewport change)
+  // Track fetched time ranges per sparkline key to avoid redundant requests
+  const sparklineFetchedRanges = useRef<Map<string, { start: number; end: number }[]>>(new Map());
+
+  // Fetch sparkline sample data (debounced on viewport change), merging into cache
   useEffect(() => {
     if (sparklineConfigs.size === 0) {
       return;
     }
     const controller = new AbortController();
+    const viewEnd = viewStart + viewDuration;
     const timer = setTimeout(() => {
       for (const [folder, fields] of sparklineConfigs) {
         const folderParam = folder === "(root)" ? "." : folder;
         for (const { topic, field } of fields) {
           const key = `${folder}/${topic}/${field}`;
+          // Check if this viewport is already covered by a previous fetch
+          const ranges = sparklineFetchedRanges.current.get(key) ?? [];
+          const alreadyCovered = ranges.some((r) => r.start <= viewStart && r.end >= viewEnd);
+          if (alreadyCovered) {
+            continue;
+          }
           fetch(
-            `${apiBase}/api/mcap/sample?folder=${encodeURIComponent(folderParam)}&topic=${encodeURIComponent(topic)}&field=${encodeURIComponent(field)}&start=${viewStart}&end=${viewStart + viewDuration}&maxPoints=500&decimation=10`,
+            `${apiBase}/api/mcap/sample?folder=${encodeURIComponent(folderParam)}&topic=${encodeURIComponent(topic)}&field=${encodeURIComponent(field)}&start=${viewStart}&end=${viewEnd}&maxPoints=500&decimation=10`,
             { signal: controller.signal },
           )
             .then((r) => r.json())
             .then((data: { segments: SparklineSegment[] }) => {
-              setSparklineData((prev) => {
-                const next = new Map(prev);
-                next.set(key, data.segments);
+              // Record this fetched range
+              const prev = sparklineFetchedRanges.current.get(key) ?? [];
+              sparklineFetchedRanges.current.set(key, [...prev, { start: viewStart, end: viewEnd }]);
+              // Merge new segments into existing data
+              setSparklineData((prevData) => {
+                const next = new Map(prevData);
+                const existing = next.get(key) ?? [];
+                const merged = mergeSegments(existing, data.segments);
+                next.set(key, merged);
                 return next;
               });
             })
