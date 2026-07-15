@@ -1911,14 +1911,29 @@ export default function McapTimeline(): JSX.Element {
               {sparklineFieldsLoading ? (
                 <Stack alignItems="center" padding={2}><CircularProgress size={20} /></Stack>
               ) : (
-                <Autocomplete
+                <Autocomplete<SparklineField, false, false, true>
                   autoFocus
                   openOnFocus
                   disablePortal
+                  freeSolo
                   size="small"
                   options={sparklineFields}
-                  getOptionLabel={(opt) => `${opt.topic}.${opt.field}`}
-                  renderOption={(props, opt) => (
+                  getOptionLabel={(opt) => typeof opt === "string" ? opt : `${opt.topic}.${opt.field}`}
+                  filterOptions={(options, state) => {
+                    const input = state.inputValue.toLowerCase();
+                    if (input.includes("*")) {
+                      // Wildcard: convert *pattern* to regex
+                      const regex = new RegExp(
+                        "^" + input.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$",
+                        "i",
+                      );
+                      return options.filter((o) => regex.test(`${o.topic}.${o.field}`) || regex.test(o.field));
+                    }
+                    return options.filter((o) =>
+                      `${o.topic}.${o.field}`.toLowerCase().includes(input),
+                    );
+                  }}
+                  renderOption={(props, opt) => typeof opt === "string" ? null : (
                     <li {...props} key={`${opt.topic}/${opt.field}`}>
                       <span style={{ flex: 1, fontSize: 12 }}><span style={{ opacity: 0.5 }}>{opt.topic}.</span>{opt.field}</span>
                       <Chip
@@ -1931,26 +1946,53 @@ export default function McapTimeline(): JSX.Element {
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      placeholder="Search fields…"
+                      placeholder="Search or *wildcard*…"
+                      helperText="Use * for wildcard, e.g. *opmode*"
                       autoFocus
                       size="small"
+                      FormHelperTextProps={{ sx: { fontSize: 10, mt: 0.5, opacity: 0.6 } }}
                     />
                   )}
                   onChange={(_e, opt) => {
-                    if (!opt) {
-                      return;
-                    }
                     const folder = sparklinePopover.folder;
-                    setSparklineConfigs((prev) => {
-                      const next = new Map(prev);
-                      const list = next.get(folder) ?? [];
-                      // Don't add duplicates
-                      if (list.some((s) => s.topic === opt.topic && s.field === opt.field)) {
-                        return prev;
+                    if (typeof opt === "string") {
+                      // freeSolo: user typed a pattern and hit Enter
+                      const input = opt.trim();
+                      if (!input.includes("*")) {
+                        return;
                       }
-                      next.set(folder, [...list, { topic: opt.topic, field: opt.field, type: opt.type }]);
-                      return next;
-                    });
+                      const regex = new RegExp(
+                        "^" + input.toLowerCase().replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$",
+                        "i",
+                      );
+                      const matches = sparklineFields.filter((f) =>
+                        regex.test(`${f.topic}.${f.field}`) || regex.test(f.field),
+                      );
+                      if (matches.length === 0) {
+                        return;
+                      }
+                      setSparklineConfigs((prev) => {
+                        const next = new Map(prev);
+                        const list = [...(next.get(folder) ?? [])];
+                        for (const m of matches) {
+                          if (!list.some((s) => s.topic === m.topic && s.field === m.field)) {
+                            list.push({ topic: m.topic, field: m.field, type: m.type });
+                          }
+                        }
+                        next.set(folder, list);
+                        return next;
+                      });
+                    } else if (opt) {
+                      setSparklineConfigs((prev) => {
+                        const next = new Map(prev);
+                        const list = next.get(folder) ?? [];
+                        if (list.some((s) => s.topic === opt.topic && s.field === opt.field)) {
+                          return prev;
+                        }
+                        next.set(folder, [...list, { topic: opt.topic, field: opt.field, type: opt.type }]);
+                        return next;
+                      });
+                    }
                     setSparklinePopover(null);
                   }}
                   ListboxProps={{ style: { maxHeight: 250, fontSize: 12 } }}
