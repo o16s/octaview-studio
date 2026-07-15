@@ -1762,61 +1762,37 @@ export default function McapTimeline(): JSX.Element {
                         height={SPARKLINE_ROW_HEIGHT}
                         fill="transparent"
                       />
-                      {segments.map((seg, segIdx) => {
-                        if (seg.timestamps.length === 0) {
-                          return null;
-                        }
-                        const points = seg.timestamps
-                          .map((t, j) => {
-                            const x = timeToX(t);
-                            const yVal = rowY + 1 + (1 - (seg.values[j]! - minVal) / valRange) * rowH;
-                            return `${x},${yVal}`;
-                          });
-
-                        // For boolean: step function
-                        if (type === "boolean") {
-                          const stepPoints: string[] = [];
+                      {(() => {
+                        // Flatten all segments into one continuous polyline
+                        const allPoints: string[] = [];
+                        let prevVal: number | undefined;
+                        for (const seg of segments) {
                           for (let j = 0; j < seg.timestamps.length; j++) {
                             const x = timeToX(seg.timestamps[j]!);
                             const yVal = rowY + 1 + (1 - (seg.values[j]! - minVal) / valRange) * rowH;
-                            if (j > 0) {
-                              // Horizontal line to current x at previous y
-                              const prevY = rowY + 1 + (1 - (seg.values[j - 1]! - minVal) / valRange) * rowH;
-                              stepPoints.push(`${x},${prevY}`);
+                            if (type === "boolean" && prevVal != null) {
+                              // Step function: horizontal line at previous y to current x
+                              const prevY = rowY + 1 + (1 - (prevVal - minVal) / valRange) * rowH;
+                              allPoints.push(`${x},${prevY}`);
                             }
-                            stepPoints.push(`${x},${yVal}`);
+                            allPoints.push(`${x},${yVal}`);
+                            prevVal = seg.values[j]!;
                           }
-                          // Extend to file end time
-                          if (seg.timestamps.length > 0) {
-                            const lastY = rowY + 1 + (1 - (seg.values[seg.values.length - 1]! - minVal) / valRange) * rowH;
-                            const lastX = timeToX(seg.timestamps[seg.timestamps.length - 1]! + 1);
-                            stepPoints.push(`${lastX},${lastY}`);
-                          }
-                          return (
-                            <polyline
-                              key={`seg-${segIdx}`}
-                              points={stepPoints.join(" ")}
-                              fill="none"
-                              stroke={folderColor}
-                              strokeWidth={1.5}
-                              opacity={0.8}
-                              style={{ pointerEvents: "none" }}
-                            />
-                          );
                         }
-
+                        if (allPoints.length === 0) {
+                          return null;
+                        }
                         return (
                           <polyline
-                            key={`seg-${segIdx}`}
-                            points={points.join(" ")}
+                            points={allPoints.join(" ")}
                             fill="none"
                             stroke={folderColor}
-                            strokeWidth={1}
-                            opacity={0.7}
+                            strokeWidth={type === "boolean" ? 1.5 : 1}
+                            opacity={type === "boolean" ? 0.8 : 0.7}
                             style={{ pointerEvents: "none" }}
                           />
                         );
-                      })}
+                      })()}
                     </g>
                   );
                 });
