@@ -85,6 +85,8 @@ export type WorkspaceActions = {
     // This will perform a browser download of the current layout to a file
     exportToFile: () => void;
   };
+
+  setPendingLayoutConfirmation: (data: LayoutData | undefined, name?: string) => void;
 };
 
 function setterValue<T>(action: SetStateAction<T>, value: T): T {
@@ -110,14 +112,22 @@ export function useWorkspaceActions(): WorkspaceActions {
 
   const { getCurrentLayoutState, setCurrentLayout } = useCurrentLayoutActions();
 
-  const openFile = useOpenFile(availableSources);
-
   const set = useCallback(
     (setter: (draft: Draft<WorkspaceContextStore>) => void) => {
       setState(produce<WorkspaceContextStore>(setter));
     },
     [setState],
   );
+
+  const setPendingLayoutConfirmation = useCallback(
+    (data: LayoutData | undefined, name?: string) => {
+      // Use Zustand setState directly (shallow merge) to avoid immer Draft depth issues
+      setState({ pendingLayoutConfirmation: data ? { data, name: name ?? "" } : undefined });
+    },
+    [setState],
+  );
+
+  const openFile = useOpenFile(availableSources, setPendingLayoutConfirmation);
 
   const importLayoutFromFile = useCallbackWithToast(async () => {
     const fileHandles = await showOpenFilePicker({
@@ -334,6 +344,8 @@ export function useWorkspaceActions(): WorkspaceActions {
         importFromFile: importLayoutFromFile,
         exportToFile: exportLayoutToFile,
       },
+
+      setPendingLayoutConfirmation,
     };
-  }, [exportLayoutToFile, importLayoutFromFile, openFile, set]);
+  }, [exportLayoutToFile, importLayoutFromFile, openFile, set, setPendingLayoutConfirmation]);
 }

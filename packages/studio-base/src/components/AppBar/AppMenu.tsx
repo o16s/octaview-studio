@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { makeStyles } from "tss-react/mui";
 
 import TextMiddleTruncate from "@foxglove/studio-base/components/TextMiddleTruncate";
+import { useCurrentLayoutActions } from "@foxglove/studio-base/context/CurrentLayoutContext";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import { getCurrentFiles } from "@foxglove/studio-base/dataSources/McapServerDataSourceFactory";
 import { exportFilesAsZip } from "@foxglove/studio-base/util/exportZip";
@@ -54,6 +55,7 @@ export function AppMenu(props: AppMenuProps): JSX.Element {
   const leftSidebarOpen = useWorkspaceStore(selectLeftSidebarOpen);
   const rightSidebarOpen = useWorkspaceStore(selectRightSidebarOpen);
   const { sidebarActions, dialogActions, layoutActions } = useWorkspaceActions();
+  const { getCurrentLayoutState } = useCurrentLayoutActions();
 
   const handleNestedMenuClose = useCallback(() => {
     setNestedMenu(undefined);
@@ -106,7 +108,13 @@ export function AppMenu(props: AppMenuProps): JSX.Element {
         onClick: () => {
           const files = getCurrentFiles();
           if (files) {
-            void exportFilesAsZip(files);
+            const allFiles = [...files];
+            const layoutData = getCurrentLayoutState().selectedLayout?.data;
+            if (layoutData) {
+              const layoutJson = JSON.stringify(layoutData, undefined, 2) ?? "";
+              allFiles.push(new File([layoutJson], "layout.json", { type: "application/json" }));
+            }
+            void exportFilesAsZip(allFiles);
           }
           handleNestedMenuClose();
         },
@@ -141,6 +149,8 @@ export function AppMenu(props: AppMenuProps): JSX.Element {
     classes.truncate,
     dialogActions.dataSource,
     dialogActions.openFile,
+    dialogActions.exportVideo,
+    getCurrentLayoutState,
     handleNestedMenuClose,
     hasOpenFiles,
     recentSources,

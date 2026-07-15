@@ -55,6 +55,7 @@ import {
 import { JsonMessageWriter } from "./JsonMessageWriter";
 import { MessageWriter } from "./MessageWriter";
 import WorkerSocketAdapter from "./WorkerSocketAdapter";
+import { websocketCloseMessage } from "./websocketCloseMessage";
 
 const log = Log.getLogger(__dirname);
 const textEncoder = new TextEncoder();
@@ -264,8 +265,9 @@ export default class FoxgloveWebSocketPlayer implements Player {
     // this during a disconnect event. Any necessary state clearing is handled once a new connection
     // is established
     this.#client.on("close", (event) => {
-      log.info("Connection closed:", event);
-      this.#presence = PlayerPresence.RECONNECTING;
+      const code = (event as CloseEvent | undefined)?.code;
+      const reason = (event as CloseEvent | undefined)?.reason;
+      log.info("Connection closed:", { code, reason });
 
       if (this.#getParameterInterval != undefined) {
         clearInterval(this.#getParameterInterval);
@@ -278,16 +280,27 @@ export default class FoxgloveWebSocketPlayer implements Player {
       this.#client?.close();
       this.#client = undefined;
 
+      const closeMessage = websocketCloseMessage(code, reason);
+
+      // For auth/policy failures (code 1008), don't retry — the token is
+      // invalid and reconnecting with the same token is pointless.
+      const isAuthFailure = code === 1008;
+
+      this.#presence = isAuthFailure ? PlayerPresence.ERROR : PlayerPresence.RECONNECTING;
+
       this.#problems.addProblem("ws:connection-failed", {
         severity: "error",
-        message: "Connection failed",
-        tip: `Check that the WebSocket server at ${
-          this.#url
-        } is reachable and supports protocol version ${FoxgloveClient.SUPPORTED_SUBPROTOCOL}.`,
+        message: closeMessage,
+        tip: isAuthFailure
+          ? "The authentication token may have expired. Reload the page or reconnect with a new token."
+          : `Check that the WebSocket server at ${this.#url} is reachable.`,
       });
 
       this.#emitState();
-      this.#openTimeout = setTimeout(this.#open, 3000);
+
+      if (!isAuthFailure) {
+        this.#openTimeout = setTimeout(this.#open, 3000);
+      }
     });
 
     this.#client.on("serverInfo", (event) => {

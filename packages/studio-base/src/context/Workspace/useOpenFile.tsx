@@ -5,14 +5,19 @@
 import path from "path";
 import { useCallback, useMemo } from "react";
 
+import type { LayoutData } from "@foxglove/studio-base/context/CurrentLayoutContext";
 import {
   IDataSourceFactory,
   usePlayerSelection,
 } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import { extractFilesFromZip } from "@foxglove/studio-base/util/extractZip";
+import { parseLayoutFile } from "@foxglove/studio-base/util/parseLayoutFile";
 import showOpenFilePicker from "@foxglove/studio-base/util/showOpenFilePicker";
 
-export function useOpenFile(sources: readonly IDataSourceFactory[]): () => Promise<void> {
+export function useOpenFile(
+  sources: readonly IDataSourceFactory[],
+  onLayoutFound?: (data: LayoutData, name: string) => void,
+): () => Promise<void> {
   const { selectSource } = usePlayerSelection();
 
   const allExtensions = useMemo(() => {
@@ -23,7 +28,7 @@ export function useOpenFile(sources: readonly IDataSourceFactory[]): () => Promi
 
       return [...all, ...source.supportedFileTypes];
     }, []);
-    exts.push(".zip");
+    exts.push(".zip", ".json");
     return exts;
   }, [sources]);
 
@@ -53,7 +58,19 @@ export function useOpenFile(sources: readonly IDataSourceFactory[]): () => Promi
         expanded.push(file);
       }
     }
-    files = expanded;
+    // Separate layout JSON files from data files
+    const dataFiles: File[] = [];
+    for (const file of expanded) {
+      if (file.name.endsWith(".json")) {
+        const layoutData = await parseLayoutFile(file);
+        if (layoutData && onLayoutFound) {
+          onLayoutFound(layoutData, file.name);
+          continue;
+        }
+      }
+      dataFiles.push(file);
+    }
+    files = dataFiles;
 
     if (files.length === 0) {
       return;
@@ -81,5 +98,5 @@ export function useOpenFile(sources: readonly IDataSourceFactory[]): () => Promi
     }
 
     selectSource(foundSource.id, { type: "file", files });
-  }, [allExtensions, selectSource, sources]);
+  }, [allExtensions, onLayoutFound, selectSource, sources]);
 }

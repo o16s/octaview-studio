@@ -20,6 +20,7 @@ import { makeStyles } from "tss-react/mui";
 import Logger from "@foxglove/log";
 import { AppSetting } from "@foxglove/studio-base/AppSetting";
 import { extractFilesFromZip } from "@foxglove/studio-base/util/extractZip";
+import { parseLayoutFile } from "@foxglove/studio-base/util/parseLayoutFile";
 import { AppBarProps, AppBar } from "@foxglove/studio-base/components/AppBar";
 import { CustomWindowControlsProps } from "@foxglove/studio-base/components/AppBar/CustomWindowControls";
 import {
@@ -58,8 +59,12 @@ import {
   WorkspaceContextStore,
   useWorkspaceStore,
 } from "@foxglove/studio-base/context/Workspace/WorkspaceContext";
-import { useCurrentLayoutActions } from "@foxglove/studio-base/context/CurrentLayoutContext";
+import {
+  type LayoutData,
+  useCurrentLayoutActions,
+} from "@foxglove/studio-base/context/CurrentLayoutContext";
 import { useAppConfigurationValue } from "@foxglove/studio-base/hooks";
+import { useConfirm } from "@foxglove/studio-base/hooks/useConfirm";
 import { useDefaultWebLaunchPreference } from "@foxglove/studio-base/hooks/useDefaultWebLaunchPreference";
 import useElectronFilesToOpen from "@foxglove/studio-base/hooks/useElectronFilesToOpen";
 import { PlayerPresence } from "@foxglove/studio-base/players/types";
@@ -147,11 +152,41 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
   const { t } = useTranslation("workspace");
   const { AppBarComponent = AppBar } = props;
 
-  const { dialogActions, sidebarActions } = useWorkspaceActions();
+  const { dialogActions, sidebarActions, setPendingLayoutConfirmation } = useWorkspaceActions();
+
+  // Handle pending layout confirmation from ZIP import or .json drop
+  const [confirm, confirmModal] = useConfirm();
+  const pendingLayout = useWorkspaceStore(
+    (store: WorkspaceContextStore) => store.pendingLayoutConfirmation,
+  );
+  const { setCurrentLayout } = useCurrentLayoutActions();
+  const pendingLayoutHandled = useRef(false);
+
+  useEffect(() => {
+    if (!pendingLayout || pendingLayoutHandled.current) {
+      return;
+    }
+    pendingLayoutHandled.current = true;
+    void (async () => {
+      const result = await confirm({
+        title: t("applyLayoutTitle", { defaultValue: "Apply Layout" }),
+        prompt: t("applyLayoutPrompt", {
+          defaultValue:
+            "This file includes a saved layout. Would you like to reset the current layout?",
+        }),
+        ok: t("applyLayoutOk", { defaultValue: "Apply Layout" }),
+      });
+      if (result === "ok") {
+        setCurrentLayout({ data: pendingLayout.data as LayoutData, name: pendingLayout.name });
+      }
+      setPendingLayoutConfirmation(undefined);
+      pendingLayoutHandled.current = false;
+    })();
+  }, [confirm, pendingLayout, setCurrentLayout, setPendingLayoutConfirmation, t]);
 
   // file types we support for drag/drop
   const allowedDropExtensions = useMemo(() => {
-    const extensions = [".foxe", ".zip"];
+    const extensions = [".foxe", ".zip", ".json"];
     for (const source of availableSources) {
       if (source.type === "file" && source.supportedFileTypes) {
         extensions.push(...source.supportedFileTypes);
@@ -237,6 +272,12 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
               variant: "error",
             });
           }
+        } else if (file.name.endsWith(".json")) {
+          // Layout file — parse and offer to apply
+          const layoutData = await parseLayoutFile(file);
+          if (layoutData) {
+            setPendingLayoutConfirmation(layoutData, file.name);
+          }
         } else {
           otherFiles.push(file);
         }
@@ -258,7 +299,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
         }
       }
     },
-    [availableSources, enqueueSnackbar, installExtension, selectSource],
+    [availableSources, enqueueSnackbar, installExtension, selectSource, setPendingLayoutConfirmation],
   );
 
   const openHandle = useCallback(
@@ -465,7 +506,6 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
   }, [playerPresence, seek, unappliedTime]);
 
   // Apply layout from ?layout= or ?layoutUrl= URL params.
-  const { setCurrentLayout } = useCurrentLayoutActions();
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -659,6 +699,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
   return (
     <PanelStateContextProvider>
       {dataSourceDialog.open && <DataSourceDialog />}
+      {confirmModal}
       <DocumentDropListener onDrop={dropHandler} allowedExtensions={allowedDropExtensions} />
       <SyncAdapters />
       <KeyListener global keyDownHandlers={keyDownHandlers} />

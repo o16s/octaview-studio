@@ -41,6 +41,10 @@ export type WorkspaceContextStore = {
     active: undefined | string;
     shown: string[];
   };
+  pendingLayoutConfirmation?: {
+    data: unknown;
+    name: string;
+  };
   playbackControls: {
     repeat: boolean;
   };

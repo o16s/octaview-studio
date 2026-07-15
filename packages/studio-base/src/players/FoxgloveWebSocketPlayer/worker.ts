@@ -7,9 +7,15 @@ export type ToWorkerMessage =
   | { type: "close"; data: undefined }
   | { type: "data"; data: string | ArrayBuffer | ArrayBufferView };
 
+export type WorkerCloseData = {
+  code: number;
+  reason: string;
+  wasClean: boolean;
+};
+
 export type FromWorkerMessage =
   | { type: "open"; protocol: string }
-  | { type: "close"; data: unknown }
+  | { type: "close"; data: WorkerCloseData }
   | { type: "error"; error: unknown }
   | { type: "message"; data: unknown };
 
@@ -39,7 +45,10 @@ self.onmessage = (event: MessageEvent<ToWorkerMessage>) => {
           });
         };
         ws.onclose = (wsEvent) => {
-          send({ type: "close", data: JSON.parse(JSON.stringify(wsEvent) ?? "{}") });
+          send({
+            type: "close",
+            data: { code: wsEvent.code, reason: wsEvent.reason, wasClean: wsEvent.wasClean },
+          });
         };
         ws.onmessage = (wsEvent: MessageEvent) => {
           if (wsEvent.data instanceof ArrayBuffer) {

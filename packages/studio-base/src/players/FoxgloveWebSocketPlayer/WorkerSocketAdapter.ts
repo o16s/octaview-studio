@@ -4,7 +4,7 @@
 
 import { IWebSocket } from "@foxglove/ws-protocol";
 
-import { FromWorkerMessage, ToWorkerMessage } from "./worker";
+import { FromWorkerMessage, ToWorkerMessage, WorkerCloseData } from "./worker";
 
 export default class WorkerSocketAdapter implements IWebSocket {
   #worker: Worker;
@@ -35,15 +35,20 @@ export default class WorkerSocketAdapter implements IWebSocket {
             this.onopen(event.data);
           }
           break;
-        case "close":
+        case "close": {
           // websocket connection got closed, we can terminate the worker
           this.#connectionClosed = true;
           this.#worker.terminate();
 
           if (this.onclose) {
-            this.onclose(event.data);
+            const closeData: WorkerCloseData = event.data.data;
+            // Construct a CloseEvent-like object with code and reason so
+            // downstream handlers (FoxgloveClient) can inspect why the
+            // connection was closed.
+            this.onclose(new CloseEvent("close", closeData));
           }
           break;
+        }
         case "error":
           if (this.onerror) {
             this.onerror(event.data);
