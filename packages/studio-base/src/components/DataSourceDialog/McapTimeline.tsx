@@ -1406,7 +1406,9 @@ export default function McapTimeline(): JSX.Element {
                       sx={{ p: 0, ml: 0.25, opacity: 0.6, "&:hover": { opacity: 1 } }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSparklinePopover({ anchorEl: e.currentTarget, folder: folderName });
+                        // Anchor to the parent folder row div, not the tiny icon
+                        const row = (e.currentTarget as HTMLElement).parentElement;
+                        setSparklinePopover({ anchorEl: row ?? e.currentTarget, folder: folderName });
                       }}
                       title="Add sparkline"
                     >
@@ -1414,12 +1416,18 @@ export default function McapTimeline(): JSX.Element {
                     </IconButton>
                   </div>
                   {/* Sparkline labels */}
-                  {sparklines.map(({ topic, field }) => (
+                  {sparklines.map(({ topic, field }) => {
+                    const dataKey = `${folderName}/${topic}/${field}`;
+                    const hasData = sparklineData.has(dataKey);
+                    return (
                     <div
                       key={`${topic}/${field}`}
                       className={classes.labelRow}
                       style={{ height: SPARKLINE_ROW_HEIGHT, paddingLeft: 20, cursor: "default" }}
                     >
+                      {!hasData && (
+                        <CircularProgress size={10} sx={{ mr: 0.5, flexShrink: 0 }} />
+                      )}
                       <Tooltip title={`${topic}.${field}`} placement="right">
                         <Typography
                           variant="caption"
@@ -1451,7 +1459,8 @@ export default function McapTimeline(): JSX.Element {
                         <CloseIcon sx={{ fontSize: 10 }} />
                       </IconButton>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })}
