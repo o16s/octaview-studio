@@ -26,10 +26,27 @@ COPY --from=web-build /src/web/.webpack dist/
 # Build static binary
 RUN CGO_ENABLED=0 go build -o /octaview-studio .
 
-# Stage 3: Minimal runtime
+# Stage 3: Download static ffmpeg binary (multi-arch)
+FROM debian:bookworm-slim AS ffmpeg-fetch
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
+ARG TARGETARCH
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) ARCH=x64 ;; \
+      arm64) ARCH=arm64 ;; \
+      *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-linux-${ARCH}.gz" -o /tmp/ffmpeg.gz && \
+    gunzip /tmp/ffmpeg.gz && \
+    mv /tmp/ffmpeg /usr/local/bin/ffmpeg && \
+    chmod +x /usr/local/bin/ffmpeg && \
+    /usr/local/bin/ffmpeg -version
+
+# Stage 4: Minimal runtime
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=go-build /octaview-studio /octaview-studio
+COPY --from=ffmpeg-fetch /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 
 EXPOSE 8152
 
