@@ -239,6 +239,8 @@ These are served by the Go server (`cmd/foxglove-server/main.go`), enabled when 
 | GET | `/api/mcap/files/<path>` | Serve an individual MCAP file (supports HTTP Range requests) |
 | GET | `/api/mcap/topics/<path>` | List topics in an MCAP file (JSON array with topic, schemaName, messageEncoding, messageCount) |
 | GET | `/api/mcap/index` | Stream NDJSON index with time ranges and topic metadata per file. Optional `?start=<unix>&end=<unix>` filters to files overlapping that window. |
+| GET | `/api/mcap/fields` | List plottable fields across MCAP files in a folder (from SQLite cache) |
+| GET | `/api/mcap/sample` | Sample decimated time series data for a field across files in a folder |
 | GET | `/api/mcap/video/<path>` | Remux an H.264 video topic from an MCAP file to streamable MP4 |
 | GET | `/api/downloads` | List desktop installer files (JSON array, requires `--downloads-path`) |
 | GET | `/api/downloads/<filename>` | Serve a desktop installer file |
@@ -261,13 +263,13 @@ Each file line is a JSON object with a `file` key:
   "endTime": 1752393000.456,
   "size": 8012345,
   "topics": [
-    {"topic": "sensingcam/sick1/video/h264", "schemaName": "foxglove.CompressedVideo", "messageEncoding": "protobuf"},
-    {"topic": "sensingcam/sick1/imu", "schemaName": "sensor_msgs/msg/Imu", "messageEncoding": "cdr"}
+    {"topic": "sensingcam/sick1/video/h264", "schemaName": "foxglove.CompressedVideo", "messageEncoding": "protobuf", "messageCount": 9608},
+    {"topic": "sensingcam/sick1/imu", "schemaName": "sensor_msgs/msg/Imu", "messageEncoding": "cdr", "messageCount": 4200}
   ]
 }}
 ```
 
-The `topics` array contains all channels in the file with their topic name, schema name, and message encoding. Topic metadata is cached in SQLite alongside the time range index for fast subsequent lookups.
+The `topics` array contains all channels in the file with their topic name, schema name, message encoding, and message count. Topic metadata is cached in SQLite alongside the time range index for fast subsequent lookups.
 
 ### Video Streaming: `/api/mcap/video/<path>`
 
@@ -384,6 +386,125 @@ for (const file of files) {
 - If the client disconnects, the ffmpeg process is cleaned up automatically
 - `<path>` is relative to the `--mcap-path` directory (absolute paths are also accepted)
 - Handles H.264 streams where SPS/PPS are in separate messages from IDR frames
+
+### Signal Sampling: `/api/mcap/fields` and `/api/mcap/sample`
+
+Query plottable signal data from MCAP recordings. Designed for sparkline previews and programmatic signal analysis (e.g., "find recordings where a PLC alarm was active"). Optimized for low-power hardware (ARM, 2GB RAM) — uses streaming reads, decimation, and SQLite caching.
+
+**Field indexing** happens automatically during the first `/api/mcap/index` request. For each JSON-encoded topic, the server reads one message to detect field names and types, then caches them in SQLite.
+
+#### List Fields: `GET /api/mcap/fields`
+
+Returns all plottable fields across MCAP files in a folder.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `folder` | Yes | Folder path relative to `--mcap-path` (use `.` for root) |
+| `plottable` | No | If `false`, include string fields too (default: `true`, numbers and booleans only) |
+
+```bash
+curl 'https://HOST:8152/api/mcap/fields?folder=recordings'
+```
+
+```json
+[
+  {"topic": "plc1/tags", "field": "ST010_MachineState_AlarmActive", "type": "boolean"},
+  {"topic": "plc1/tags", "field": "ST010_VirtMaster_ActualPos", "type": "number"},
+  {"topic": "plc1/tags", "field": "ST010_Statistics_TotalNoOfTrays", "type": "number"},
+  {"topic": "device", "field": "disk_free_mb", "type": "number"}
+]
+```
+
+Fields are cached in SQLite (`mcap_fields` table). Subsequent requests are instant — no MCAP file I/O.
+
+#### Sample Data: `GET /api/mcap/sample`
+
+Returns decimated time series values for a single field across all MCAP files in a folder that overlap the requested time range. Results are split into **per-file segments** (gaps between files are preserved).
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `folder` | Yes | Folder path relative to `--mcap-path` (use `.` for root) |
+| `topic` | Yes | Topic name (e.g., `plc1/tags`) |
+| `field` | Yes | Field name (e.g., `ST010_MachineState_AlarmActive`) |
+| `start` | Yes | Start time as Unix seconds (float) |
+| `end` | Yes | End time as Unix seconds (float) |
+| `decimation` | No | Read every Nth message (default: `10`) |
+| `maxPoints` | No | Maximum points per segment (default: `500`) — downsampled using min-max bucketing to preserve peaks |
+
+```bash
+# Sample alarm signal over a 30-minute window
+curl 'https://HOST:8152/api/mcap/sample?folder=recordings&topic=plc1/tags&field=ST010_MachineState_AlarmActive&start=1784099886&end=1784102158&maxPoints=100'
+```
+
+```json
+{
+  "segments": [
+    {
+      "file": "recordings/2026-07-15T07-18-06Z_0002.mcap",
+      "timestamps": [1784099909.6, 1784100117.4, 1784100342.9, ...],
+      "values": [0, 0, 1, 1, 0, 0, ...]
+    },
+    {
+      "file": "recordings/2026-07-15T08-00-00Z_0003.mcap",
+      "timestamps": [1784102400.1, 1784102622.3, ...],
+      "values": [0, 0, ...]
+    }
+  ]
+}
+```
+
+**Value mapping:** Numbers are returned as-is. Booleans are mapped to `0` (false) and `1` (true). String fields are skipped.
+
+**Caching:** Sampled values are cached in SQLite (`mcap_samples` table) keyed by `(file, topic, field, decimation)`. Subsequent requests for the same data are served from cache without touching MCAP files.
+
+**Downsampling:** When a segment has more points than `maxPoints / numSegments`, min-max bucketing reduces the output while preserving peaks and troughs — critical for alarm signals where you need to see every transition.
+
+#### Workflow: Find Interesting Time Periods
+
+**1. List available fields:**
+```bash
+curl 'https://HOST:8152/api/mcap/fields?folder=recordings'
+```
+
+**2. Sample a signal across a day:**
+```bash
+curl 'https://HOST:8152/api/mcap/sample?folder=recordings&topic=plc1/tags&field=ST010_MachineState_AlarmActive&start=1784073600&end=1784160000&maxPoints=500'
+```
+
+**3. Find where the alarm was active** (client-side or via MCP):
+```javascript
+const data = await fetch("/api/mcap/sample?...").then(r => r.json());
+const alarmRanges = [];
+for (const seg of data.segments) {
+  for (let i = 0; i < seg.timestamps.length; i++) {
+    if (seg.values[i] === 1) {
+      alarmRanges.push({ file: seg.file, time: seg.timestamps[i] });
+    }
+  }
+}
+```
+
+**4. Download only the relevant video clips:**
+```bash
+for range in alarmRanges:
+  curl -o "clip_${range.time}.mp4" \
+    "https://HOST:8152/api/mcap/video/${range.file}?topic=cam/h264&start=${range.time-30}&end=${range.time+30}"
+```
+
+#### UI Integration
+
+In the octaview Studio Recordings timeline, click the **"+"** button next to any folder name to add a sparkline. A searchable field picker shows all plottable fields. Selected signals render as inline SVG polylines below the folder's file bars, sharing the same time axis. Boolean signals use step rendering; numeric signals use linear interpolation.
+
+Sparkline configurations persist to `localStorage` and survive page reloads. Data re-fetches automatically when the viewport is panned or zoomed (debounced 400ms).
+
+#### Performance Notes
+
+- **Streaming reads** — MCAP files are never loaded entirely into memory
+- **gjson** — single-field extraction without full JSON unmarshal
+- **Concurrent reads capped at 2** — prevents memory exhaustion on low-RAM devices
+- **Batch SQLite inserts** — one transaction per file, 1000-row batches
+- **Client disconnect** — aborts reading immediately via `r.Context().Done()`
+- First request for uncached data takes ~1-3s per file (depending on message count and storage speed). Subsequent requests are instant from SQLite cache.
 
 ## Server CLI Flags
 
