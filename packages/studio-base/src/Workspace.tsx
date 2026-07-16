@@ -342,6 +342,16 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
             variant: "error",
           });
         }
+        return;
+      }
+
+      if (file.name.endsWith(".json")) {
+        // Layout file — parse and offer to apply
+        const layoutData = await parseLayoutFile(file);
+        if (layoutData) {
+          setPendingLayoutConfirmation(layoutData, file.name);
+        }
+        return;
       }
 
       // Look for a source that supports the file extensions
@@ -353,7 +363,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
         selectSource(matchedSource.id, { type: "file", handle });
       }
     },
-    [availableSources, enqueueSnackbar, installExtension, openFiles, selectSource],
+    [availableSources, enqueueSnackbar, installExtension, openFiles, selectSource, setPendingLayoutConfirmation],
   );
 
   // files the main thread told us to open
