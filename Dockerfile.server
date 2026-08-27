@@ -34,6 +34,7 @@ RUN set -eux; \
     case "${TARGETARCH}" in \
       amd64) ARCH=x64 ;; \
       arm64) ARCH=arm64 ;; \
+      arm) ARCH=arm ;; \
       *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac; \
     curl -fsSL "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-linux-${ARCH}.gz" -o /tmp/ffmpeg.gz && \
