@@ -46,7 +46,8 @@
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns",
       "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "notarize": false
     },
     "dmg": {
       "title": "octaview Studio"
