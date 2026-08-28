@@ -46,9 +46,7 @@
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns",
       "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "gatekeeperAssess": false
     },
     "dmg": {
       "title": "octaview Studio"
