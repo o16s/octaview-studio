@@ -18,16 +18,15 @@ import {
 import Stack from "@foxglove/studio-base/components/Stack";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import {
-  EDGE_HUB_CONNECTIONS_KEY,
-  parseEdgeHubConnections,
-} from "@foxglove/studio-base/dataSources/edgeHubCredentials";
+  refreshEdgeHubConnections,
+  useEdgeHubConnections,
+} from "@foxglove/studio-base/dataSources/edgeHubConnectionsStore";
 import {
   EdgeHubHealth,
   fetchEdgeHubHealth,
 } from "@foxglove/studio-base/dataSources/edgeHubHealth";
 import { buildEdgeHubWebSocketUrl } from "@foxglove/studio-base/dataSources/edgeHubHost";
 import { PlayerPresence } from "@foxglove/studio-base/players/types";
-import { getSecureStorage } from "@foxglove/studio-base/services/secureStorage";
 
 // Only the Edge Hub source persists credentials today (via secure storage). If more
 // sources gain saved-connection support later, this becomes a small list of loaders
@@ -100,19 +99,6 @@ type SavedConnection = {
   params: Record<string, string | undefined>;
 };
 
-async function loadSavedConnections(): Promise<SavedConnection[]> {
-  const secureStorage = getSecureStorage();
-  if (!secureStorage) {
-    return [];
-  }
-  const serialized = await secureStorage.get(EDGE_HUB_CONNECTIONS_KEY);
-  return parseEdgeHubConnections(serialized).map((credentials) => ({
-    sourceId: EDGE_HUB_SOURCE_ID,
-    ip: credentials.ip,
-    params: credentials,
-  }));
-}
-
 export function MyConnections(): JSX.Element {
   const { t } = useTranslation("workspace");
   const { classes, cx } = useStyles();
@@ -121,19 +107,23 @@ export function MyConnections(): JSX.Element {
   const activeUrlState = useMessagePipeline(selectUrlState);
 
   const [filterText, setFilterText] = useState("");
-  const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
   const [health, setHealth] = useState<Record<string, EdgeHubHealth | undefined>>({});
 
+  // Reactive: also updates immediately if a connection is saved elsewhere (e.g. the
+  // "Open connection" dialog) while this tab is already mounted, not just on mount.
+  const edgeHubConnections = useEdgeHubConnections();
+  const savedConnections = useMemo<SavedConnection[]>(
+    () =>
+      edgeHubConnections.map((credentials) => ({
+        sourceId: EDGE_HUB_SOURCE_ID,
+        ip: credentials.ip,
+        params: credentials,
+      })),
+    [edgeHubConnections],
+  );
+
   useEffect(() => {
-    let cancelled = false;
-    void loadSavedConnections().then((connections) => {
-      if (!cancelled) {
-        setSavedConnections(connections);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
+    void refreshEdgeHubConnections();
   }, []);
 
   // Periodically check each saved connection's /healthz endpoint so the list shows

@@ -15,14 +15,8 @@ import {
   useWorkspaceStore,
 } from "@foxglove/studio-base/context/Workspace/WorkspaceContext";
 import { useWorkspaceActions } from "@foxglove/studio-base/context/Workspace/useWorkspaceActions";
-import {
-  EDGE_HUB_CONNECTIONS_KEY,
-  parseEdgeHubConnections,
-  serializeEdgeHubConnections,
-  upsertEdgeHubConnection,
-} from "@foxglove/studio-base/dataSources/edgeHubCredentials";
+import { saveEdgeHubConnection } from "@foxglove/studio-base/dataSources/edgeHubConnectionsStore";
 import { AppEvent } from "@foxglove/studio-base/services/IAnalytics";
-import { getSecureStorage } from "@foxglove/studio-base/services/secureStorage";
 
 import { FormField } from "./FormField";
 import { ScanQrButton } from "./QrScanner";
@@ -171,15 +165,10 @@ export default function Connection(): JSX.Element {
     void analytics.logEvent(AppEvent.DIALOG_CLOSE, { activeDataSource });
 
     if (isEdgeHub) {
-      const secureStorage = getSecureStorage();
       const ip = fieldValues.ip;
       const token = fieldValues.token;
-      if (secureStorage && ip != undefined && token != undefined) {
-        void secureStorage.get(EDGE_HUB_CONNECTIONS_KEY).then((serialized) => {
-          const existing = parseEdgeHubConnections(serialized);
-          const next = upsertEdgeHubConnection(existing, { ip, token });
-          void secureStorage.set(EDGE_HUB_CONNECTIONS_KEY, serializeEdgeHubConnections(next));
-        });
+      if (ip != undefined && token != undefined) {
+        void saveEdgeHubConnection({ ip, token });
       }
     }
 
