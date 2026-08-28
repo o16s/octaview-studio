@@ -27,7 +27,7 @@ export const openDialog = {
   openLocalFileDescription: "Visualize data directly from your local filesystem.",
   openUrl: "Upload and share data",
   openUrlDescription: "Use octaview to share data with your team.",
-  recentDataSources: "Recent data sources",
+  savedConnections: "Saved Connections",
   secureStorageOfData: "Securely store petabytes of ROS or custom data",
   seeTutorials: "See tutorials",
   shareLayouts: "Share layouts",
@@ -35,6 +35,7 @@ export const openDialog = {
   startCollaborating: "Start collaborating with your octaview organization",
   startCollaboratingDescription:
     "Make the most of your octaview account – whether you want to dive deep on your data or share tools with your teammates.",
+  unreachable: "unreachable",
   uploadToDataPlatform: "Upload to Data Platform",
   viewOurDocs: "View our docs",
 };

@@ -30,7 +30,7 @@ export const openDialog: Partial<TypeOptions["resources"]["openDialog"]> = {
   openLocalFileDescription: "ローカルファイルシステムから直接データを可視化します。",
   openUrl: "データをアップロードして共有する",
   openUrlDescription: "octaview Data Platformを使用して、チームとデータを共有します。",
-  recentDataSources: "最近のデータソース",
+  savedConnections: "最近のデータソース",
   secureStorageOfData: "ROSまたはカスタムデータをペタバイト単位で安全に保存",
   seeTutorials: "チュートリアルを見る",
   shareLayouts: "レイアウトを共有する",

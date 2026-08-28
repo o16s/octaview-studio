@@ -29,7 +29,7 @@ export const openDialog = {
   openLocalFileDescription: "Visualice datos directamente desde su sistema de archivos local.",
   openUrl: "Cargar y compartir datos",
   openUrlDescription: "Use octaview para compartir datos con su equipo.",
-  recentDataSources: "Fuentes de datos recientes",
+  savedConnections: "Fuentes de datos recientes",
   secureStorageOfData: "Almacene petabytes de datos ROS o personalizados de forma segura",
   seeTutorials: "Ver tutoriales",
   shareLayouts: "Compartir diseños",

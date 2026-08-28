@@ -19,11 +19,13 @@ import { makeStyles } from "tss-react/mui";
 
 import FoxgloveLogoText from "@foxglove/studio-base/components/FoxgloveLogoText";
 import Stack from "@foxglove/studio-base/components/Stack";
-import TextMiddleTruncate from "@foxglove/studio-base/components/TextMiddleTruncate";
 import { useAnalytics } from "@foxglove/studio-base/context/AnalyticsContext";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import { useWorkspaceActions } from "@foxglove/studio-base/context/Workspace/useWorkspaceActions";
+import { useSavedEdgeHubConnections } from "@foxglove/studio-base/dataSources/useSavedEdgeHubConnections";
 import { AppEvent } from "@foxglove/studio-base/services/IAnalytics";
+
+const EDGE_HUB_SOURCE_ID = "octaview-edge-hub";
 
 type DownloadFile = {
   name: string;
@@ -113,11 +115,17 @@ const isServerMode = typeof serverConfig === "object";
 const hasDownloads = isServerMode && serverConfig?.hasDownloads === true;
 
 export default function Start(): JSX.Element {
-  const { recentSources, selectRecent } = usePlayerSelection();
+  const { availableSources, selectSource } = usePlayerSelection();
+  const savedConnections = useSavedEdgeHubConnections();
   const { classes, cx } = useStyles();
   const analytics = useAnalytics();
   const { t } = useTranslation("openDialog");
   const { dialogActions } = useWorkspaceActions();
+
+  const edgeHubSource = useMemo(
+    () => availableSources.find((source) => source.id === EDGE_HUB_SOURCE_ID),
+    [availableSources],
+  );
 
   const [downloads, setDownloads] = useState<DownloadFile[]>([]);
   const [downloadsLoading, setDownloadsLoading] = useState(false);
@@ -242,25 +250,43 @@ export default function Start(): JSX.Element {
               </Button>
             ))}
           </Stack>
-          {recentSources.length > 0 && (
+          {savedConnections.length > 0 && edgeHubSource && (
             <Stack gap={1}>
               <Typography variant="h5" gutterBottom>
-                {t("recentDataSources")}
+                {t("savedConnections")}
               </Typography>
               <List disablePadding>
-                {recentSources.slice(0, 5).map((recent) => (
-                  <ListItem disablePadding key={recent.id} id={recent.id}>
+                {savedConnections.map((connection) => (
+                  <ListItem disablePadding key={connection.ip}>
                     <ListItemButton
                       disableGutters
                       onClick={() => {
-                        selectRecent(recent.id);
+                        selectSource(EDGE_HUB_SOURCE_ID, {
+                          type: "connection",
+                          params: { ip: connection.ip, token: connection.token },
+                        });
+                        void analytics.logEvent(AppEvent.DIALOG_CLOSE, {
+                          activeDataSource: EDGE_HUB_SOURCE_ID,
+                        });
+                        dialogActions.dataSource.close();
                       }}
                       className={classes.recentListItemButton}
                     >
-                      <TextMiddleTruncate
-                        className={classes.recentSourceSecondary}
-                        text={recent.title}
-                      />
+                      <Stack flex="auto" zeroMinWidth>
+                        <Typography
+                          variant="body2"
+                          className={classes.recentSourceSecondary}
+                          noWrap
+                        >
+                          {edgeHubSource.displayName}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                          {connection.ip}
+                          {connection.health
+                            ? ` · ${connection.health.status} · ${connection.health.version}`
+                            : ` · ${t("unreachable")}`}
+                        </Typography>
+                      </Stack>
                     </ListItemButton>
                   </ListItem>
                 ))}

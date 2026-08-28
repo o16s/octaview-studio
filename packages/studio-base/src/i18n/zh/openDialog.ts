@@ -26,7 +26,7 @@ export const openDialog: Partial<TypeOptions["resources"]["openDialog"]> = {
   openLocalFileDescription: "直接从本地文件系统可视化数据。",
   openUrl: "上传和共享数据",
   openUrlDescription: "使用 octaview 数据平台与您的团队共享数据。",
-  recentDataSources: "最近使用的数据源",
+  savedConnections: "最近使用的数据源",
   secureStorageOfData: "安全地存储 PB 级的 ROS 或自定义数据",
   seeTutorials: "查看教程",
   shareLayouts: "分享布局",

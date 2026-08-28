@@ -5,7 +5,7 @@
 import ClearIcon from "@mui/icons-material/Clear";
 import SearchIcon from "@mui/icons-material/Search";
 import { Chip, IconButton, Paper, TextField, Typography } from "@mui/material";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { makeStyles } from "tss-react/mui";
 
@@ -17,22 +17,15 @@ import {
 } from "@foxglove/studio-base/components/MessagePipeline";
 import Stack from "@foxglove/studio-base/components/Stack";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
-import {
-  refreshEdgeHubConnections,
-  useEdgeHubConnections,
-} from "@foxglove/studio-base/dataSources/edgeHubConnectionsStore";
-import {
-  EdgeHubHealth,
-  fetchEdgeHubHealth,
-} from "@foxglove/studio-base/dataSources/edgeHubHealth";
+import { EdgeHubHealth } from "@foxglove/studio-base/dataSources/edgeHubHealth";
 import { buildEdgeHubWebSocketUrl } from "@foxglove/studio-base/dataSources/edgeHubHost";
+import { useSavedEdgeHubConnections } from "@foxglove/studio-base/dataSources/useSavedEdgeHubConnections";
 import { PlayerPresence } from "@foxglove/studio-base/players/types";
 
 // Only the Edge Hub source persists credentials today (via secure storage). If more
 // sources gain saved-connection support later, this becomes a small list of loaders
 // instead of a single one.
 const EDGE_HUB_SOURCE_ID = "octaview-edge-hub";
-const HEALTH_POLL_INTERVAL_MS = 10_000;
 
 const selectPlayerPresence = ({ playerState }: MessagePipelineContext) => playerState.presence;
 const selectUrlState = ({ playerState }: MessagePipelineContext) => playerState.urlState;
@@ -96,6 +89,7 @@ const useStyles = makeStyles()((theme) => ({
 type SavedConnection = {
   sourceId: string;
   ip: string;
+  health: EdgeHubHealth | undefined;
   params: Record<string, string | undefined>;
 };
 
@@ -107,48 +101,21 @@ export function MyConnections(): JSX.Element {
   const activeUrlState = useMessagePipeline(selectUrlState);
 
   const [filterText, setFilterText] = useState("");
-  const [health, setHealth] = useState<Record<string, EdgeHubHealth | undefined>>({});
 
   // Reactive: also updates immediately if a connection is saved elsewhere (e.g. the
   // "Open connection" dialog) while this tab is already mounted, not just on mount.
-  const edgeHubConnections = useEdgeHubConnections();
+  // Shared with the start screen's "Saved Connections" section, so both always agree.
+  const edgeHubConnections = useSavedEdgeHubConnections();
   const savedConnections = useMemo<SavedConnection[]>(
     () =>
-      edgeHubConnections.map((credentials) => ({
+      edgeHubConnections.map((connection) => ({
         sourceId: EDGE_HUB_SOURCE_ID,
-        ip: credentials.ip,
-        params: credentials,
+        ip: connection.ip,
+        health: connection.health,
+        params: { ip: connection.ip, token: connection.token },
       })),
     [edgeHubConnections],
   );
-
-  useEffect(() => {
-    void refreshEdgeHubConnections();
-  }, []);
-
-  // Periodically check each saved connection's /healthz endpoint so the list shows
-  // whether the device is currently reachable, not just what was last saved.
-  useEffect(() => {
-    if (savedConnections.length === 0) {
-      return;
-    }
-    let cancelled = false;
-    const poll = () => {
-      savedConnections.forEach((connection) => {
-        void fetchEdgeHubHealth(connection.ip).then((result) => {
-          if (!cancelled) {
-            setHealth((prev) => ({ ...prev, [connection.ip]: result }));
-          }
-        });
-      });
-    };
-    poll();
-    const interval = setInterval(poll, HEALTH_POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [savedConnections]);
 
   const filteredConnections = useMemo(() => {
     const needle = filterText.trim().toLowerCase();
@@ -210,7 +177,7 @@ export function MyConnections(): JSX.Element {
               playerPresence === PlayerPresence.PRESENT &&
               activeUrlState?.sourceId === connection.sourceId &&
               activeUrlState.parameters?.url === buildEdgeHubWebSocketUrl(connection.ip);
-            const connectionHealth = health[connection.ip];
+            const connectionHealth = connection.health;
 
             return (
               <Paper

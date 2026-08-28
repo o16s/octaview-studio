@@ -30,7 +30,7 @@ export const openDialog = {
   openUrl: "Daten hochladen und teilen",
   openUrlDescription:
     "Verwenden Sie octaview, um Daten mit Ihrem Team zu teilen.",
-  recentDataSources: "Letzte Datenquellen",
+  savedConnections: "Letzte Datenquellen",
   secureStorageOfData: "Sichere Speicherung von Petabytes an ROS- oder benutzerdefinierten Daten",
   seeTutorials: "Tutorials ansehen",
   shareLayouts: "Layouts teilen",
