@@ -1,5 +1,10 @@
 # Stage 1: Build web frontend
-FROM node:16 AS web-build
+# Always build on the native host arch, regardless of the target platform(s) being
+# built - this stage only produces static JS/HTML/CSS that gets copied into later
+# stages, so running it under QEMU emulation for a foreign target arch just wastes
+# time (and, for 32-bit linux/arm/v7, reliably OOMs partway through `yarn install`
+# - confirmed: 23+ minutes in, "Libzip Error: ...: Malloc failure").
+FROM --platform=$BUILDPLATFORM node:16 AS web-build
 WORKDIR /src
 RUN corepack enable yarn
 
