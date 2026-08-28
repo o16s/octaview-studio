@@ -18,13 +18,14 @@ import {
 import Stack from "@foxglove/studio-base/components/Stack";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import {
-  EDGE_HUB_CREDENTIALS_KEY,
-  parseEdgeHubCredentials,
+  EDGE_HUB_CONNECTIONS_KEY,
+  parseEdgeHubConnections,
 } from "@foxglove/studio-base/dataSources/edgeHubCredentials";
 import {
   EdgeHubHealth,
   fetchEdgeHubHealth,
 } from "@foxglove/studio-base/dataSources/edgeHubHealth";
+import { buildEdgeHubWebSocketUrl } from "@foxglove/studio-base/dataSources/edgeHubHost";
 import { PlayerPresence } from "@foxglove/studio-base/players/types";
 import { getSecureStorage } from "@foxglove/studio-base/services/secureStorage";
 
@@ -35,6 +36,7 @@ const EDGE_HUB_SOURCE_ID = "octaview-edge-hub";
 const HEALTH_POLL_INTERVAL_MS = 10_000;
 
 const selectPlayerPresence = ({ playerState }: MessagePipelineContext) => playerState.presence;
+const selectUrlState = ({ playerState }: MessagePipelineContext) => playerState.urlState;
 
 const useStyles = makeStyles()((theme) => ({
   root: {
@@ -103,19 +105,20 @@ async function loadSavedConnections(): Promise<SavedConnection[]> {
   if (!secureStorage) {
     return [];
   }
-  const serialized = await secureStorage.get(EDGE_HUB_CREDENTIALS_KEY);
-  const credentials = parseEdgeHubCredentials(serialized);
-  if (!credentials) {
-    return [];
-  }
-  return [{ sourceId: EDGE_HUB_SOURCE_ID, ip: credentials.ip, params: credentials }];
+  const serialized = await secureStorage.get(EDGE_HUB_CONNECTIONS_KEY);
+  return parseEdgeHubConnections(serialized).map((credentials) => ({
+    sourceId: EDGE_HUB_SOURCE_ID,
+    ip: credentials.ip,
+    params: credentials,
+  }));
 }
 
 export function MyConnections(): JSX.Element {
   const { t } = useTranslation("workspace");
   const { classes, cx } = useStyles();
-  const { availableSources, selectedSource, selectSource } = usePlayerSelection();
+  const { availableSources, selectSource } = usePlayerSelection();
   const playerPresence = useMessagePipeline(selectPlayerPresence);
+  const activeUrlState = useMessagePipeline(selectUrlState);
 
   const [filterText, setFilterText] = useState("");
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
@@ -144,7 +147,7 @@ export function MyConnections(): JSX.Element {
       savedConnections.forEach((connection) => {
         void fetchEdgeHubHealth(connection.ip).then((result) => {
           if (!cancelled) {
-            setHealth((prev) => ({ ...prev, [connection.sourceId]: result }));
+            setHealth((prev) => ({ ...prev, [connection.ip]: result }));
           }
         });
       });
@@ -210,16 +213,18 @@ export function MyConnections(): JSX.Element {
             if (!source) {
               return ReactNull;
             }
-            // Only one connection can be open at a time, so "active" is simply: this
-            // is the currently selected source, and the player has actually connected.
+            // Only one connection can be open at a time. Multiple saved connections
+            // share the same sourceId (they're all Edge Hubs), so "active" has to be
+            // determined by comparing the actual connection url, not just the source.
             const isActive =
-              selectedSource?.id === connection.sourceId &&
-              playerPresence === PlayerPresence.PRESENT;
-            const connectionHealth = health[connection.sourceId];
+              playerPresence === PlayerPresence.PRESENT &&
+              activeUrlState?.sourceId === connection.sourceId &&
+              activeUrlState.parameters?.url === buildEdgeHubWebSocketUrl(connection.ip);
+            const connectionHealth = health[connection.ip];
 
             return (
               <Paper
-                key={connection.sourceId}
+                key={connection.ip}
                 variant="outlined"
                 className={cx(classes.row, { [classes.rowActive]: isActive })}
                 onClick={() => {

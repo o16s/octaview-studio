@@ -16,9 +16,10 @@ import {
 } from "@foxglove/studio-base/context/Workspace/WorkspaceContext";
 import { useWorkspaceActions } from "@foxglove/studio-base/context/Workspace/useWorkspaceActions";
 import {
-  EDGE_HUB_CREDENTIALS_KEY,
-  parseEdgeHubCredentials,
-  serializeEdgeHubCredentials,
+  EDGE_HUB_CONNECTIONS_KEY,
+  parseEdgeHubConnections,
+  serializeEdgeHubConnections,
+  upsertEdgeHubConnection,
 } from "@foxglove/studio-base/dataSources/edgeHubCredentials";
 import { AppEvent } from "@foxglove/studio-base/services/IAnalytics";
 import { getSecureStorage } from "@foxglove/studio-base/services/secureStorage";
@@ -146,10 +147,12 @@ export default function Connection(): JSX.Element {
     }
   }, [activeDataSource, connectionSources]);
 
-  // Clear field values when the user changes the source tab, then - for the Edge Hub
-  // source, on the desktop app only - try to pre-fill the last-saved ip/token from
-  // secure storage (the browser build has no desktopBridge, so getSecureStorage()
-  // returns undefined there and this is a no-op).
+  // Clear field values when the user changes the source tab. This dialog is for
+  // connecting to a specific (possibly new) Edge Hub, so it always starts blank -
+  // with multiple connections now saveable, pre-filling from "the" saved one would
+  // be ambiguous and error-prone (e.g. silently reusing an old token while typing a
+  // new ip). Reconnecting to a previously-saved hub is what the "Connections"
+  // sidebar tab is for.
   useLayoutEffect(() => {
     const defaultFieldValues: Record<string, string | undefined> = {};
     for (const field of selectedSource?.formConfig?.fields ?? []) {
@@ -158,32 +161,7 @@ export default function Connection(): JSX.Element {
       }
     }
     setFieldValues(defaultFieldValues);
-
-    if (!isEdgeHub) {
-      return;
-    }
-    const secureStorage = getSecureStorage();
-    if (!secureStorage) {
-      return;
-    }
-    let cancelled = false;
-    void secureStorage.get(EDGE_HUB_CREDENTIALS_KEY).then((serialized) => {
-      if (cancelled) {
-        return;
-      }
-      const credentials = parseEdgeHubCredentials(serialized);
-      if (credentials) {
-        setFieldValues((prev) => ({ ...prev, ip: credentials.ip, token: credentials.token }));
-        // FormField's TextField uses defaultValue (uncontrolled), which only takes effect
-        // at mount - bump the form's key to remount it now that we have real values,
-        // same trick handleQrScan uses below.
-        setFormResetKey((k) => k + 1);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isEdgeHub, selectedSource]);
+  }, [selectedSource]);
 
   const onOpen = useCallback(() => {
     if (!selectedSource) {
@@ -197,10 +175,11 @@ export default function Connection(): JSX.Element {
       const ip = fieldValues.ip;
       const token = fieldValues.token;
       if (secureStorage && ip != undefined && token != undefined) {
-        void secureStorage.set(
-          EDGE_HUB_CREDENTIALS_KEY,
-          serializeEdgeHubCredentials({ ip, token }),
-        );
+        void secureStorage.get(EDGE_HUB_CONNECTIONS_KEY).then((serialized) => {
+          const existing = parseEdgeHubConnections(serialized);
+          const next = upsertEdgeHubConnection(existing, { ip, token });
+          void secureStorage.set(EDGE_HUB_CONNECTIONS_KEY, serializeEdgeHubConnections(next));
+        });
       }
     }
 

@@ -2,29 +2,78 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import { parseEdgeHubCredentials, serializeEdgeHubCredentials } from "./edgeHubCredentials";
+import {
+  parseEdgeHubConnections,
+  serializeEdgeHubConnections,
+  upsertEdgeHubConnection,
+} from "./edgeHubCredentials";
 
-describe("serializeEdgeHubCredentials / parseEdgeHubCredentials", () => {
-  it("round-trips a valid ip/token pair", () => {
-    const serialized = serializeEdgeHubCredentials({ ip: "192.168.1.100", token: "abc123" });
-    expect(parseEdgeHubCredentials(serialized)).toEqual({ ip: "192.168.1.100", token: "abc123" });
+describe("serializeEdgeHubConnections / parseEdgeHubConnections", () => {
+  it("round-trips multiple connections", () => {
+    const connections = [
+      { ip: "192.168.1.100", token: "abc123" },
+      { ip: "bl335", token: "def456" },
+    ];
+    expect(parseEdgeHubConnections(serializeEdgeHubConnections(connections))).toEqual(
+      connections,
+    );
   });
 
-  it("returns undefined for malformed JSON", () => {
-    expect(parseEdgeHubCredentials("not json")).toBeUndefined();
+  it("round-trips an empty list", () => {
+    expect(parseEdgeHubConnections(serializeEdgeHubConnections([]))).toEqual([]);
   });
 
-  it("returns undefined when required fields are missing", () => {
-    expect(parseEdgeHubCredentials(JSON.stringify({ ip: "192.168.1.100" }))).toBeUndefined();
-    expect(parseEdgeHubCredentials(JSON.stringify({ token: "abc123" }))).toBeUndefined();
-    expect(parseEdgeHubCredentials("{}")).toBeUndefined();
+  it("returns an empty array for undefined input", () => {
+    expect(parseEdgeHubConnections(undefined)).toEqual([]);
   });
 
-  it("returns undefined when fields are the wrong type", () => {
-    expect(parseEdgeHubCredentials(JSON.stringify({ ip: 1, token: "abc123" }))).toBeUndefined();
+  it("returns an empty array for malformed JSON", () => {
+    expect(parseEdgeHubConnections("not json")).toEqual([]);
   });
 
-  it("returns undefined for undefined input", () => {
-    expect(parseEdgeHubCredentials(undefined)).toBeUndefined();
+  it("returns an empty array when the top-level value isn't an array", () => {
+    expect(parseEdgeHubConnections(JSON.stringify({ ip: "1.2.3.4", token: "x" }))).toEqual([]);
+  });
+
+  it("filters out individually malformed entries rather than discarding the whole list", () => {
+    const serialized = JSON.stringify([
+      { ip: "192.168.1.100", token: "abc123" },
+      { ip: "missing-token" },
+      "not an object",
+      { ip: "10.0.0.1", token: "xyz789" },
+    ]);
+    expect(parseEdgeHubConnections(serialized)).toEqual([
+      { ip: "192.168.1.100", token: "abc123" },
+      { ip: "10.0.0.1", token: "xyz789" },
+    ]);
+  });
+});
+
+describe("upsertEdgeHubConnection", () => {
+  it("appends a new connection for a new ip", () => {
+    const existing = [{ ip: "192.168.1.100", token: "abc123" }];
+    expect(upsertEdgeHubConnection(existing, { ip: "10.0.0.1", token: "xyz789" })).toEqual([
+      { ip: "192.168.1.100", token: "abc123" },
+      { ip: "10.0.0.1", token: "xyz789" },
+    ]);
+  });
+
+  it("updates the token in place for an existing ip, without reordering", () => {
+    const existing = [
+      { ip: "192.168.1.100", token: "old-token" },
+      { ip: "10.0.0.1", token: "xyz789" },
+    ];
+    expect(upsertEdgeHubConnection(existing, { ip: "192.168.1.100", token: "new-token" })).toEqual(
+      [
+        { ip: "192.168.1.100", token: "new-token" },
+        { ip: "10.0.0.1", token: "xyz789" },
+      ],
+    );
+  });
+
+  it("starts a new list when given an empty one", () => {
+    expect(upsertEdgeHubConnection([], { ip: "192.168.1.100", token: "abc123" })).toEqual([
+      { ip: "192.168.1.100", token: "abc123" },
+    ]);
   });
 });

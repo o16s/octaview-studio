@@ -6,3 +6,8 @@
 export function buildEdgeHubHost(ip: string): string {
   return ip.includes(":") ? ip : `${ip}:8443`;
 }
+
+/** Builds the Edge Hub WebSocket connection url for a given ip/hostname. */
+export function buildEdgeHubWebSocketUrl(ip: string): string {
+  return `wss://${buildEdgeHubHost(ip)}/api/v1/ws`;
+}

@@ -6,7 +6,7 @@ import {
   IDataSourceFactory,
   DataSourceFactoryInitializeArgs,
 } from "@foxglove/studio-base/context/PlayerSelectionContext";
-import { buildEdgeHubHost } from "@foxglove/studio-base/dataSources/edgeHubHost";
+import { buildEdgeHubWebSocketUrl } from "@foxglove/studio-base/dataSources/edgeHubHost";
 import FoxgloveWebSocketPlayer from "@foxglove/studio-base/players/FoxgloveWebSocketPlayer";
 import { Player } from "@foxglove/studio-base/players/types";
 
@@ -67,10 +67,8 @@ export default class EdgeHubDataSourceFactory implements IDataSourceFactory {
       return;
     }
 
-    const url = `wss://${buildEdgeHubHost(ip)}/api/v1/ws`;
-
     return new FoxgloveWebSocketPlayer({
-      url,
+      url: buildEdgeHubWebSocketUrl(ip),
       token,
       metricsCollector: args.metricsCollector,
       sourceId: this.id,
