@@ -3,6 +3,8 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 export const topicList = {
+  addToNewPanel: "Add to new panel",
+  addToExistingPanel: "Add to existing panel",
   anErrorOccurred: "An error occurred",
   clearFilter: "Clear filter",
   copyMessagePath: "Copy message path",

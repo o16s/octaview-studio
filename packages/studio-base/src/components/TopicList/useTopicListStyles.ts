@@ -10,7 +10,7 @@ import { badgeClasses } from "@mui/material";
 import tc from "tinycolor2";
 import { makeStyles } from "tss-react/mui";
 
-type TreeClasses = "dragHandle" | "row" | "isDragging" | "selected";
+type TreeClasses = "dragHandle" | "fieldActions" | "row" | "isDragging" | "selected";
 
 export const useTopicListStyles = makeStyles<void, TreeClasses>()((theme, _, classes) => ({
   isDragging: {},
@@ -29,7 +29,7 @@ export const useTopicListStyles = makeStyles<void, TreeClasses>()((theme, _, cla
     boxShadow: `0 1px 0 0 ${theme.palette.action.selected}`,
     userSelect: "none",
 
-    [`:not(:hover) .${classes.dragHandle}`]: {
+    [`:not(:hover) .${classes.dragHandle}, :not(:hover) .${classes.fieldActions}`]: {
       visibility: "hidden",
     },
     [`&.${classes.selected}, &.${classes.isDragging}:active`]: {
@@ -68,9 +68,17 @@ export const useTopicListStyles = makeStyles<void, TreeClasses>()((theme, _, cla
       display: "none",
     },
   },
+  fieldActions: {
+    display: "flex",
+    gap: theme.spacing(0.25),
+    flexShrink: 0,
+  },
   // tss-unused-classes only looks within the same file to determine if classes are used. These ones
   // are used in other files.
   /* eslint-disable tss-unused-classes/unused-classes */
+  fieldActionButton: {
+    padding: theme.spacing(0.25),
+  },
   fieldRow: {
     borderTop: `1px solid ${theme.palette.background.paper}`,
     backgroundColor: theme.palette.action.hover,

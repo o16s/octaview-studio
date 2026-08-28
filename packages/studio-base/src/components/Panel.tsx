@@ -59,6 +59,7 @@ import {
   useWorkspaceStore,
   WorkspaceStoreSelectors,
 } from "@foxglove/studio-base/context/Workspace/WorkspaceContext";
+import { setLastFocusedPanel } from "@foxglove/studio-base/hooks/useLastFocusedPanelByType";
 import usePanelDrag from "@foxglove/studio-base/hooks/usePanelDrag";
 import { useMessagePathDrop } from "@foxglove/studio-base/services/messagePathDragging";
 import { TabPanelConfig } from "@foxglove/studio-base/types/layouts";
@@ -315,6 +316,10 @@ export default function Panel<
 
     const onPanelRootClick: MouseEventHandler<HTMLDivElement> = useCallback(
       (e) => {
+        // Track this as the most recently focused panel of its type, so features like
+        // "add field to existing panel" from the Topics list know where to send new data.
+        setLastFocusedPanel(type, childId);
+
         if (panelSettingsOpen) {
           // Allow clicking with no modifiers to select a panel (and deselect others) when panel settings are open
           e.stopPropagation(); // select the deepest clicked panel, not parent tab panels
@@ -324,7 +329,7 @@ export default function Panel<
           togglePanelSelected(childId, tabId);
         }
       },
-      [childId, tabId, togglePanelSelected, isSelected, setSelectedPanelIds, panelSettingsOpen],
+      [childId, tabId, togglePanelSelected, isSelected, setSelectedPanelIds, panelSettingsOpen, type],
     );
 
     const groupPanels = useCallback(() => {

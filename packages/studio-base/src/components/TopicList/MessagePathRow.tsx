@@ -2,10 +2,15 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import { ReOrderDotsVertical16Regular } from "@fluentui/react-icons";
-import { Badge, Typography } from "@mui/material";
+import {
+  AddSquare16Regular,
+  AddSquareMultiple16Regular,
+  ReOrderDotsVertical16Regular,
+} from "@fluentui/react-icons";
+import { Badge, IconButton, Tooltip, Typography } from "@mui/material";
 import { FzfResultItem } from "fzf";
 import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 import { HighlightChars } from "@foxglove/studio-base/components/HighlightChars";
 import { DraggedMessagePath } from "@foxglove/studio-base/components/PanelExtensionAdapter";
@@ -13,6 +18,7 @@ import Stack from "@foxglove/studio-base/components/Stack";
 import { useMessagePathDrag } from "@foxglove/studio-base/services/messagePathDragging";
 
 import { MessagePathSearchItem } from "./getMessagePathSearchItems";
+import { useAddFieldToPanel } from "./useAddFieldToPanel";
 import { useTopicListStyles } from "./useTopicListStyles";
 
 export function MessagePathRow({
@@ -29,12 +35,19 @@ export function MessagePathRow({
   onContextMenu: React.MouseEventHandler<HTMLDivElement>;
 }): JSX.Element {
   const { cx, classes } = useTopicListStyles();
+  const { t } = useTranslation("topicList");
 
   const {
     fullPath,
     suffix: { pathSuffix, type, isLeaf },
     topic,
   } = messagePathResult.item;
+
+  const { panelType, addToNewPanel, addToExistingPanel, canAddToExisting } = useAddFieldToPanel({
+    type,
+    isLeaf,
+    fullPath,
+  });
 
   const item: DraggedMessagePath = useMemo(
     () => ({
@@ -87,6 +100,39 @@ export function MessagePathRow({
           {type}
         </Typography>
       </Stack>
+      {panelType != undefined && (
+        <div className={classes.fieldActions}>
+          <Tooltip title={t("addToNewPanel")}>
+            <IconButton
+              size="small"
+              data-testid="MessagePathRowAddToNewPanel"
+              className={classes.fieldActionButton}
+              onClick={(event) => {
+                event.stopPropagation();
+                addToNewPanel();
+              }}
+            >
+              <AddSquare16Regular />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t("addToExistingPanel")}>
+            <span>
+              <IconButton
+                size="small"
+                data-testid="MessagePathRowAddToExistingPanel"
+                className={classes.fieldActionButton}
+                disabled={!canAddToExisting}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  addToExistingPanel();
+                }}
+              >
+                <AddSquareMultiple16Regular />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </div>
+      )}
       <div data-testid="TopicListDragHandle" style={{ cursor }} className={classes.dragHandle}>
         <ReOrderDotsVertical16Regular />
       </div>
