@@ -174,6 +174,10 @@ export default function Connection(): JSX.Element {
       const credentials = parseEdgeHubCredentials(serialized);
       if (credentials) {
         setFieldValues((prev) => ({ ...prev, ip: credentials.ip, token: credentials.token }));
+        // FormField's TextField uses defaultValue (uncontrolled), which only takes effect
+        // at mount - bump the form's key to remount it now that we have real values,
+        // same trick handleQrScan uses below.
+        setFormResetKey((k) => k + 1);
       }
     });
     return () => {
