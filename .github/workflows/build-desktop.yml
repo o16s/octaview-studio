@@ -27,6 +27,19 @@ jobs:
         with:
           lfs: true
 
+      - name: Debug signing secrets
+        if: runner.os == 'macOS'
+        run: |
+          echo "CSC_LINK length: ${#CSC_LINK}"
+          echo "CSC_KEY_PASSWORD length: ${#CSC_KEY_PASSWORD}"
+          echo "APPLE_ID length: ${#APPLE_ID}"
+          echo "APPLE_APP_SPECIFIC_PASSWORD length: ${#APPLE_APP_SPECIFIC_PASSWORD}"
+        env:
+          CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -49,6 +62,11 @@ jobs:
         run: npm run ${{ matrix.build-cmd }} -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && 'SS9XDVWZ4K' || '' }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
