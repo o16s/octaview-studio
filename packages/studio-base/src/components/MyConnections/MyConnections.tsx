@@ -2,19 +2,20 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import { Typography } from "@mui/material";
-import { useEffect, useState } from "react";
+import ClearIcon from "@mui/icons-material/Clear";
+import SearchIcon from "@mui/icons-material/Search";
+import { Chip, IconButton, Paper, TextField, Typography } from "@mui/material";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { makeStyles } from "tss-react/mui";
 
+import { BuiltinIcon } from "@foxglove/studio-base/components/BuiltinIcon";
 import EmptyState from "@foxglove/studio-base/components/EmptyState";
 import {
   MessagePipelineContext,
   useMessagePipeline,
 } from "@foxglove/studio-base/components/MessagePipeline";
 import Stack from "@foxglove/studio-base/components/Stack";
-// Reuses TopicList's row/selected styling so an active connection gets the same
-// orange-border treatment used for selected topics/panels elsewhere in the app.
-import { useTopicListStyles } from "@foxglove/studio-base/components/TopicList/useTopicListStyles";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import {
   EDGE_HUB_CREDENTIALS_KEY,
@@ -34,6 +35,62 @@ const EDGE_HUB_SOURCE_ID = "octaview-edge-hub";
 const HEALTH_POLL_INTERVAL_MS = 10_000;
 
 const selectPlayerPresence = ({ playerState }: MessagePipelineContext) => playerState.presence;
+
+const useStyles = makeStyles()((theme) => ({
+  root: {
+    height: "100%",
+    display: "flex",
+    flexDirection: "column",
+  },
+  filterBar: {
+    position: "sticky",
+    top: 0,
+    zIndex: theme.zIndex.appBar,
+    padding: theme.spacing(0.5),
+    backgroundColor: theme.palette.background.paper,
+  },
+  filterStartAdornment: {
+    display: "flex",
+  },
+  list: {
+    flex: "auto",
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: theme.spacing(1),
+    padding: theme.spacing(1),
+  },
+  row: {
+    display: "flex",
+    alignItems: "center",
+    gap: theme.spacing(1.5),
+    padding: theme.spacing(1.5),
+    cursor: "pointer",
+    borderLeft: `3px solid transparent`,
+
+    "&:hover": {
+      backgroundColor: theme.palette.action.hover,
+    },
+  },
+  rowActive: {
+    borderLeftColor: theme.palette.primary.main,
+    backgroundColor: theme.palette.action.selected,
+
+    "&:hover": {
+      backgroundColor: theme.palette.action.selected,
+    },
+  },
+  icon: {
+    display: "flex",
+    flexShrink: 0,
+    color: theme.palette.text.secondary,
+    fontSize: 20,
+  },
+  textContent: {
+    flex: "auto",
+    minWidth: 0,
+  },
+}));
 
 type SavedConnection = {
   sourceId: string;
@@ -56,10 +113,11 @@ async function loadSavedConnections(): Promise<SavedConnection[]> {
 
 export function MyConnections(): JSX.Element {
   const { t } = useTranslation("workspace");
-  const { classes, cx } = useTopicListStyles();
+  const { classes, cx } = useStyles();
   const { availableSources, selectedSource, selectSource } = usePlayerSelection();
   const playerPresence = useMessagePipeline(selectPlayerPresence);
 
+  const [filterText, setFilterText] = useState("");
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
   const [health, setHealth] = useState<Record<string, EdgeHubHealth | undefined>>({});
 
@@ -99,50 +157,98 @@ export function MyConnections(): JSX.Element {
     };
   }, [savedConnections]);
 
-  if (savedConnections.length === 0) {
-    return <EmptyState>{t("noSavedConnections")}</EmptyState>;
-  }
+  const filteredConnections = useMemo(() => {
+    const needle = filterText.trim().toLowerCase();
+    if (!needle) {
+      return savedConnections;
+    }
+    return savedConnections.filter((connection) => connection.ip.toLowerCase().includes(needle));
+  }, [filterText, savedConnections]);
 
   return (
-    <Stack overflow="auto">
-      {savedConnections.map((connection) => {
-        const source = availableSources.find((s) => s.id === connection.sourceId);
-        if (!source) {
-          return ReactNull;
-        }
-        // Only one connection can be open at a time, so "active" is simply: this is
-        // the currently selected source, and the player has actually connected.
-        const isActive =
-          selectedSource?.id === connection.sourceId && playerPresence === PlayerPresence.PRESENT;
-        const connectionHealth = health[connection.sourceId];
+    <div className={classes.root}>
+      <div className={classes.filterBar}>
+        <TextField
+          variant="filled"
+          fullWidth
+          placeholder={t("filterByHostname")}
+          value={filterText}
+          onChange={(event) => {
+            setFilterText(event.target.value);
+          }}
+          InputProps={{
+            size: "small",
+            startAdornment: (
+              <div className={classes.filterStartAdornment}>
+                <SearchIcon fontSize="small" />
+              </div>
+            ),
+            endAdornment: filterText && (
+              <IconButton
+                size="small"
+                title={t("clearFilter")}
+                edge="end"
+                onClick={() => {
+                  setFilterText("");
+                }}
+              >
+                <ClearIcon fontSize="small" />
+              </IconButton>
+            ),
+          }}
+        />
+      </div>
 
-        return (
-          <div
-            key={connection.sourceId}
-            className={cx(classes.row, { [classes.selected]: isActive })}
-            style={{ height: 50, cursor: "pointer" }}
-            onClick={() => {
-              selectSource(connection.sourceId, {
-                type: "connection",
-                params: connection.params,
-              });
-            }}
-          >
-            <Stack flex="auto" overflow="hidden">
-              <Typography variant="body2" noWrap>
-                {source.displayName}
-                {isActive && ` — ${t("connected")}`}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" noWrap>
-                {connection.ip}
-                {connectionHealth
-                  ? ` · ${connectionHealth.status} · ${connectionHealth.version}`
-                  : ` · ${t("unreachable")}`}
-              </Typography>
-            </Stack>
-          </div>
-        );
-      })}
-    </Stack>
+      {filteredConnections.length === 0 ? (
+        <EmptyState>
+          {savedConnections.length === 0 ? t("noSavedConnections") : t("noConnectionsMatching")}
+        </EmptyState>
+      ) : (
+        <div className={classes.list}>
+          {filteredConnections.map((connection) => {
+            const source = availableSources.find((s) => s.id === connection.sourceId);
+            if (!source) {
+              return ReactNull;
+            }
+            // Only one connection can be open at a time, so "active" is simply: this
+            // is the currently selected source, and the player has actually connected.
+            const isActive =
+              selectedSource?.id === connection.sourceId &&
+              playerPresence === PlayerPresence.PRESENT;
+            const connectionHealth = health[connection.sourceId];
+
+            return (
+              <Paper
+                key={connection.sourceId}
+                variant="outlined"
+                className={cx(classes.row, { [classes.rowActive]: isActive })}
+                onClick={() => {
+                  selectSource(connection.sourceId, {
+                    type: "connection",
+                    params: connection.params,
+                  });
+                }}
+              >
+                <div className={classes.icon}>
+                  <BuiltinIcon name={source.iconName ?? "Flow"} />
+                </div>
+                <Stack className={classes.textContent}>
+                  <Typography variant="body2" noWrap>
+                    {source.displayName}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {connection.ip}
+                    {connectionHealth
+                      ? ` · ${connectionHealth.status} · ${connectionHealth.version}`
+                      : ` · ${t("unreachable")}`}
+                  </Typography>
+                </Stack>
+                {isActive && <Chip size="small" color="primary" label={t("connected")} />}
+              </Paper>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

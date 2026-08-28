@@ -3,9 +3,12 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 export const workspace = {
+  clearFilter: "Clear filter",
   connected: "Connected",
   events: "Events",
+  filterByHostname: "Filter by hostname…",
   myConnections: "Connections",
+  noConnectionsMatching: "No connections matching your filter",
   noSavedConnections: "No saved connections yet. Connect once and it'll show up here.",
   panel: "Panel",
   performance: "Performance",
