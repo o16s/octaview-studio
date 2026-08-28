@@ -48,6 +48,7 @@ export const useTopicListStyles = makeStyles<void, TreeClasses>()((theme, _, cla
           position: "absolute",
           inset: "-1px 0 -1px 0",
           border: `1px solid ${theme.palette.primary.main}`,
+          pointerEvents: "none",
         },
         [`& + .${classes.row}`]: {
           borderTop: `1px solid ${theme.palette.primary.main}`,
