@@ -36,6 +36,7 @@ import {
   useMessagePipeline,
   useMessagePipelineGetter,
 } from "@foxglove/studio-base/components/MessagePipeline";
+import { MyConnections } from "@foxglove/studio-base/components/MyConnections";
 import PanelLayout from "@foxglove/studio-base/components/PanelLayout";
 import PanelSettings from "@foxglove/studio-base/components/PanelSettings";
 import PlaybackControls from "@foxglove/studio-base/components/PlaybackControls";
@@ -408,6 +409,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
     const items = new Map<LeftSidebarItemKey, SidebarItem>([
       ["panel-settings", { title: t("panel"), component: PanelSettings }],
       ["topics", { title: t("topics"), component: TopicList }],
+      ["my-connections", { title: t("myConnections"), component: MyConnections }],
       [
         "problems",
         {

@@ -4,6 +4,8 @@
 
 export const workspace = {
   events: "Events",
+  myConnections: "My Connections",
+  noSavedConnections: "No saved connections yet. Connect once and it'll show up here.",
   panel: "Panel",
   performance: "Performance",
   problems: "Problems",
