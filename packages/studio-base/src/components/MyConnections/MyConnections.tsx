@@ -11,24 +11,16 @@ import { makeStyles } from "tss-react/mui";
 
 import { BuiltinIcon } from "@foxglove/studio-base/components/BuiltinIcon";
 import EmptyState from "@foxglove/studio-base/components/EmptyState";
-import {
-  MessagePipelineContext,
-  useMessagePipeline,
-} from "@foxglove/studio-base/components/MessagePipeline";
 import Stack from "@foxglove/studio-base/components/Stack";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import { EdgeHubHealth } from "@foxglove/studio-base/dataSources/edgeHubHealth";
-import { buildEdgeHubWebSocketUrl } from "@foxglove/studio-base/dataSources/edgeHubHost";
+import { useActiveEdgeHubIp } from "@foxglove/studio-base/dataSources/useActiveEdgeHubIp";
 import { useSavedEdgeHubConnections } from "@foxglove/studio-base/dataSources/useSavedEdgeHubConnections";
-import { PlayerPresence } from "@foxglove/studio-base/players/types";
 
 // Only the Edge Hub source persists credentials today (via secure storage). If more
 // sources gain saved-connection support later, this becomes a small list of loaders
 // instead of a single one.
 const EDGE_HUB_SOURCE_ID = "octaview-edge-hub";
-
-const selectPlayerPresence = ({ playerState }: MessagePipelineContext) => playerState.presence;
-const selectUrlState = ({ playerState }: MessagePipelineContext) => playerState.urlState;
 
 const useStyles = makeStyles()((theme) => ({
   root: {
@@ -97,8 +89,7 @@ export function MyConnections(): JSX.Element {
   const { t } = useTranslation("workspace");
   const { classes, cx } = useStyles();
   const { availableSources, selectSource } = usePlayerSelection();
-  const playerPresence = useMessagePipeline(selectPlayerPresence);
-  const activeUrlState = useMessagePipeline(selectUrlState);
+  const activeIp = useActiveEdgeHubIp();
 
   const [filterText, setFilterText] = useState("");
 
@@ -170,13 +161,7 @@ export function MyConnections(): JSX.Element {
             if (!source) {
               return ReactNull;
             }
-            // Only one connection can be open at a time. Multiple saved connections
-            // share the same sourceId (they're all Edge Hubs), so "active" has to be
-            // determined by comparing the actual connection url, not just the source.
-            const isActive =
-              playerPresence === PlayerPresence.PRESENT &&
-              activeUrlState?.sourceId === connection.sourceId &&
-              activeUrlState.parameters?.url === buildEdgeHubWebSocketUrl(connection.ip);
+            const isActive = activeIp === connection.ip;
             const connectionHealth = connection.health;
 
             return (

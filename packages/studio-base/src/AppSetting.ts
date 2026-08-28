@@ -14,6 +14,9 @@ export enum AppSetting {
   // ROS
   ROS_PACKAGE_PATH = "ros.ros_package_path",
 
+  // Edge Hub
+  EDGE_HUB_LAYOUTS = "edgeHub.layoutsByIp",
+
   // Experimental features
   SHOW_DEBUG_PANELS = "showDebugPanels",
   ENABLE_VIDEO_EXPORT = "experimental.videoExport",

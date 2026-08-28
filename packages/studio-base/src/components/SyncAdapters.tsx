@@ -5,6 +5,7 @@
 import { useMemo } from "react";
 
 import { CurrentLayoutLocalStorageSyncAdapter } from "@foxglove/studio-base/components/CurrentLayoutLocalStorageSyncAdapter";
+import { EdgeHubLayoutSyncAdapter } from "@foxglove/studio-base/components/EdgeHubLayoutSyncAdapter";
 import { URLStateSyncAdapter } from "@foxglove/studio-base/components/URLStateSyncAdapter";
 import { useAppContext } from "@foxglove/studio-base/context/AppContext";
 
@@ -21,6 +22,7 @@ export function SyncAdapters(): JSX.Element {
       <>
         <URLStateSyncAdapter />
         <CurrentLayoutLocalStorageSyncAdapter />
+        <EdgeHubLayoutSyncAdapter />
       </>
     );
   }, [syncAdapters]);
