@@ -15,7 +15,13 @@ import {
   useWorkspaceStore,
 } from "@foxglove/studio-base/context/Workspace/WorkspaceContext";
 import { useWorkspaceActions } from "@foxglove/studio-base/context/Workspace/useWorkspaceActions";
+import {
+  EDGE_HUB_CREDENTIALS_KEY,
+  parseEdgeHubCredentials,
+  serializeEdgeHubCredentials,
+} from "@foxglove/studio-base/dataSources/edgeHubCredentials";
 import { AppEvent } from "@foxglove/studio-base/services/IAnalytics";
+import { getSecureStorage } from "@foxglove/studio-base/services/secureStorage";
 
 import { FormField } from "./FormField";
 import { ScanQrButton } from "./QrScanner";
@@ -131,6 +137,8 @@ export default function Connection(): JSX.Element {
   // Counter to force form re-mount when QR fills values
   const [formResetKey, setFormResetKey] = useState(0);
 
+  const isEdgeHub = selectedSource?.id === "octaview-edge-hub";
+
   useLayoutEffect(() => {
     const connectionIdx = connectionSources.findIndex((source) => source === activeDataSource);
     if (connectionIdx >= 0) {
@@ -138,7 +146,10 @@ export default function Connection(): JSX.Element {
     }
   }, [activeDataSource, connectionSources]);
 
-  // clear field values when the user changes the source tab
+  // Clear field values when the user changes the source tab, then - for the Edge Hub
+  // source, on the desktop app only - try to pre-fill the last-saved ip/token from
+  // secure storage (the browser build has no desktopBridge, so getSecureStorage()
+  // returns undefined there and this is a no-op).
   useLayoutEffect(() => {
     const defaultFieldValues: Record<string, string | undefined> = {};
     for (const field of selectedSource?.formConfig?.fields ?? []) {
@@ -147,7 +158,28 @@ export default function Connection(): JSX.Element {
       }
     }
     setFieldValues(defaultFieldValues);
-  }, [selectedSource]);
+
+    if (!isEdgeHub) {
+      return;
+    }
+    const secureStorage = getSecureStorage();
+    if (!secureStorage) {
+      return;
+    }
+    let cancelled = false;
+    void secureStorage.get(EDGE_HUB_CREDENTIALS_KEY).then((serialized) => {
+      if (cancelled) {
+        return;
+      }
+      const credentials = parseEdgeHubCredentials(serialized);
+      if (credentials) {
+        setFieldValues((prev) => ({ ...prev, ip: credentials.ip, token: credentials.token }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isEdgeHub, selectedSource]);
 
   const onOpen = useCallback(() => {
     if (!selectedSource) {
@@ -155,6 +187,19 @@ export default function Connection(): JSX.Element {
     }
     selectSource(selectedSource.id, { type: "connection", params: fieldValues });
     void analytics.logEvent(AppEvent.DIALOG_CLOSE, { activeDataSource });
+
+    if (isEdgeHub) {
+      const secureStorage = getSecureStorage();
+      const ip = fieldValues.ip;
+      const token = fieldValues.token;
+      if (secureStorage && ip != undefined && token != undefined) {
+        void secureStorage.set(
+          EDGE_HUB_CREDENTIALS_KEY,
+          serializeEdgeHubCredentials({ ip, token }),
+        );
+      }
+    }
+
     dialogActions.dataSource.close();
   }, [
     selectedSource,
@@ -162,6 +207,7 @@ export default function Connection(): JSX.Element {
     fieldValues,
     analytics,
     activeDataSource,
+    isEdgeHub,
     dialogActions.dataSource,
   ]);
 
@@ -183,8 +229,6 @@ export default function Connection(): JSX.Element {
     setFieldErrors(new Map());
     setFormResetKey((k) => k + 1);
   }, []);
-
-  const isEdgeHub = selectedSource?.id === "octaview-edge-hub";
 
   return (
     <View onOpen={disableOpen ? undefined : onOpen}>

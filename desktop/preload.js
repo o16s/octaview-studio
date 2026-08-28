@@ -20,4 +20,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       return () => ipcRenderer.removeListener("update-status", handler);
     },
   },
+
+  // OS-keychain-backed secure storage (see main.js) - for secrets like Edge Hub API
+  // tokens that must never be written in plaintext.
+  secureStorage: {
+    get: (key) => ipcRenderer.invoke("secure-storage:get", key),
+    set: (key, value) => ipcRenderer.invoke("secure-storage:set", key, value),
+    delete: (key) => ipcRenderer.invoke("secure-storage:delete", key),
+  },
 });

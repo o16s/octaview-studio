@@ -2,8 +2,9 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, safeStorage, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const fs = require("fs/promises");
 const path = require("path");
 
 // Allow self-signed certificates for local network connections (WSS to Edge Hubs, etc.)
@@ -107,6 +108,56 @@ ipcMain.handle("updater:check", () => autoUpdater.checkForUpdates());
 ipcMain.handle("updater:download", () => autoUpdater.downloadUpdate());
 ipcMain.handle("updater:install", () => autoUpdater.quitAndInstall());
 ipcMain.handle("updater:get-version", () => app.getVersion());
+
+// --- Secure storage ---
+// Encrypts values with the OS keychain (safeStorage) before writing them to disk, so
+// secrets like Edge Hub API tokens are never persisted in plaintext.
+
+const SECURE_STORAGE_DIR = path.join(app.getPath("userData"), "secure-storage");
+// Keys are used to build filenames, so restrict them to a safe charset (defense in
+// depth against a compromised renderer trying to pass a path-traversal key).
+const SECURE_STORAGE_KEY_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+function secureStorageFilePath(key) {
+  if (!SECURE_STORAGE_KEY_PATTERN.test(key)) {
+    throw new Error(`Invalid secure storage key: ${key}`);
+  }
+  return path.join(SECURE_STORAGE_DIR, `${key}.enc`);
+}
+
+ipcMain.handle("secure-storage:get", async (_event, key) => {
+  if (!safeStorage.isEncryptionAvailable()) {
+    return undefined;
+  }
+  try {
+    const encrypted = await fs.readFile(secureStorageFilePath(key));
+    return safeStorage.decryptString(encrypted);
+  } catch {
+    return undefined;
+  }
+});
+
+ipcMain.handle("secure-storage:set", async (_event, key, value) => {
+  if (!safeStorage.isEncryptionAvailable()) {
+    return false;
+  }
+  try {
+    await fs.mkdir(SECURE_STORAGE_DIR, { recursive: true });
+    const encrypted = safeStorage.encryptString(value);
+    await fs.writeFile(secureStorageFilePath(key), encrypted);
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle("secure-storage:delete", async (_event, key) => {
+  try {
+    await fs.unlink(secureStorageFilePath(key));
+  } catch {
+    // Already absent - nothing to do.
+  }
+});
 
 app.whenReady().then(() => {
   createWindow();
