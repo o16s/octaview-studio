@@ -6,6 +6,7 @@ import {
   IDataSourceFactory,
   DataSourceFactoryInitializeArgs,
 } from "@foxglove/studio-base/context/PlayerSelectionContext";
+import { buildEdgeHubHost } from "@foxglove/studio-base/dataSources/edgeHubHost";
 import FoxgloveWebSocketPlayer from "@foxglove/studio-base/players/FoxgloveWebSocketPlayer";
 import { Player } from "@foxglove/studio-base/players/types";
 
@@ -66,9 +67,7 @@ export default class EdgeHubDataSourceFactory implements IDataSourceFactory {
       return;
     }
 
-    // Build the WSS URL — default port 8443 if not specified
-    const host = ip.includes(":") ? ip : `${ip}:8443`;
-    const url = `wss://${host}/api/v1/ws`;
+    const url = `wss://${buildEdgeHubHost(ip)}/api/v1/ws`;
 
     return new FoxgloveWebSocketPlayer({
       url,
