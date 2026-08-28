@@ -79,7 +79,7 @@ import { useWorkspaceActions } from "./context/Workspace/useWorkspaceActions";
 
 const log = Logger.getLogger(__filename);
 
-const useStyles = makeStyles()({
+const useStyles = makeStyles()((theme) => ({
   container: {
     width: "100%",
     height: "100%",
@@ -90,7 +90,17 @@ const useStyles = makeStyles()({
     outline: "none",
     overflow: "hidden",
   },
-});
+  updateBannerInfo: {
+    padding: theme.spacing(0.5, 1),
+    backgroundColor: theme.palette.info.main,
+    color: theme.palette.info.contrastText,
+  },
+  updateBannerSuccess: {
+    padding: theme.spacing(0.5, 1),
+    backgroundColor: theme.palette.success.main,
+    color: theme.palette.success.contrastText,
+  },
+}));
 
 type WorkspaceProps = CustomWindowControlsProps & {
   deepLinks?: readonly string[];
@@ -760,7 +770,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
             alignItems="center"
             justifyContent="center"
             gap={1}
-            sx={{ px: 1, py: 0.5, bgcolor: "info.main", color: "info.contrastText" }}
+            className={classes.updateBannerInfo}
           >
             <Typography variant="body2">
               Version {autoUpdate.status.version} is available.
@@ -787,7 +797,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
             alignItems="center"
             justifyContent="center"
             gap={1}
-            sx={{ px: 1, py: 0.5, bgcolor: "info.main", color: "info.contrastText" }}
+            className={classes.updateBannerInfo}
           >
             <Typography variant="body2">
               Downloading update… {autoUpdate.status.percent}%
@@ -805,7 +815,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
             alignItems="center"
             justifyContent="center"
             gap={1}
-            sx={{ px: 1, py: 0.5, bgcolor: "success.main", color: "success.contrastText" }}
+            className={classes.updateBannerSuccess}
           >
             <Typography variant="body2">
               Version {autoUpdate.status.version} is ready.
