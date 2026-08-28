@@ -11,14 +11,19 @@ app.on("certificate-error", (event, _webContents, url, _error, _certificate, cal
   const parsed = new URL(url);
   const host = parsed.hostname;
 
-  // Allow self-signed certs for localhost and private network IPs
+  // Allow self-signed certs for localhost, private network IPs, and bare
+  // local hostnames (e.g. mDNS/.local names or LAN device names like
+  // "bl335" - single-label hostnames are never publicly routable, only
+  // resolvable via mDNS/hosts/local DNS)
   const isLocal =
     host === "localhost" ||
     host === "127.0.0.1" ||
     host === "::1" ||
     host.startsWith("192.168.") ||
     host.startsWith("10.") ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    host.endsWith(".local") ||
+    !host.includes(".");
 
   if (isLocal) {
     event.preventDefault();
