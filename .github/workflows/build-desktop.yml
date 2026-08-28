@@ -83,4 +83,4 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${{ github.ref_name }}" --draft=false --latest --generate-notes
+        run: gh release edit "${{ github.ref_name }}" --draft=false --latest
