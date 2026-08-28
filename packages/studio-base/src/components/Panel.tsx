@@ -50,15 +50,12 @@ import PanelContext from "@foxglove/studio-base/components/PanelContext";
 import PanelErrorBoundary from "@foxglove/studio-base/components/PanelErrorBoundary";
 import { PanelOverlay, PanelOverlayProps } from "@foxglove/studio-base/components/PanelOverlay";
 import { PanelRoot } from "@foxglove/studio-base/components/PanelRoot";
+import { decidePanelClickSelection } from "@foxglove/studio-base/components/panelClickSelection";
 import {
   useCurrentLayoutActions,
   useSelectedPanels,
 } from "@foxglove/studio-base/context/CurrentLayoutContext";
 import { usePanelCatalog } from "@foxglove/studio-base/context/PanelCatalogContext";
-import {
-  useWorkspaceStore,
-  WorkspaceStoreSelectors,
-} from "@foxglove/studio-base/context/Workspace/WorkspaceContext";
 import { setLastFocusedPanel } from "@foxglove/studio-base/hooks/useLastFocusedPanelByType";
 import usePanelDrag from "@foxglove/studio-base/hooks/usePanelDrag";
 import { useMessagePathDrop } from "@foxglove/studio-base/services/messagePathDragging";
@@ -312,24 +309,28 @@ export default function Panel<
       [childId, mosaicActions, mosaicWindowActions, swapPanel, tabId],
     );
 
-    const panelSettingsOpen = useWorkspaceStore(WorkspaceStoreSelectors.selectPanelSettingsOpen);
-
     const onPanelRootClick: MouseEventHandler<HTMLDivElement> = useCallback(
       (e) => {
         // Track this as the most recently focused panel of its type, so features like
         // "add field to existing panel" from the Topics list know where to send new data.
         setLastFocusedPanel(type, childId);
 
-        if (panelSettingsOpen) {
-          // Allow clicking with no modifiers to select a panel (and deselect others) when panel settings are open
-          e.stopPropagation(); // select the deepest clicked panel, not parent tab panels
-          setSelectedPanelIds([childId]);
-        } else if (e.metaKey || e.shiftKey || isSelected) {
-          e.stopPropagation(); // select the deepest clicked panel, not parent tab panels
+        // Selection (the orange border, and whatever the active sidebar tab does with it -
+        // e.g. showing panel settings) always follows clicks, regardless of which sidebar
+        // tab is open.
+        e.stopPropagation(); // select the deepest clicked panel, not parent tab panels
+        const action = decidePanelClickSelection({
+          metaKey: e.metaKey,
+          shiftKey: e.shiftKey,
+          isSelected,
+        });
+        if (action === "toggle") {
           togglePanelSelected(childId, tabId);
+        } else {
+          setSelectedPanelIds([childId]);
         }
       },
-      [childId, tabId, togglePanelSelected, isSelected, setSelectedPanelIds, panelSettingsOpen, type],
+      [childId, tabId, togglePanelSelected, isSelected, setSelectedPanelIds, type],
     );
 
     const groupPanels = useCallback(() => {
