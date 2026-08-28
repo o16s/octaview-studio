@@ -165,9 +165,13 @@ export default function Connection(): JSX.Element {
     void analytics.logEvent(AppEvent.DIALOG_CLOSE, { activeDataSource });
 
     if (isEdgeHub) {
-      const ip = fieldValues.ip;
-      const token = fieldValues.token;
-      if (ip != undefined && token != undefined) {
+      // Trim to match EdgeHubDataSourceFactory.initialize, which trims before
+      // actually connecting - otherwise a stray space (e.g. from a paste) means
+      // what's saved differs from what's connected, breaking dedup and the
+      // "active connection" highlight for that entry.
+      const ip = fieldValues.ip?.trim();
+      const token = fieldValues.token?.trim();
+      if (ip && token) {
         void saveEdgeHubConnection({ ip, token });
       }
     }
