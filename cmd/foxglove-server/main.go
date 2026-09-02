@@ -758,12 +758,14 @@ func main() {
 	if token == "" {
 		token = os.Getenv("OCTAVIEW_TOKEN")
 	}
+	tokenWasGenerated := false
 	if *generateToken && token == "" {
 		tokenBytes := make([]byte, 24)
 		if _, err := rand.Read(tokenBytes); err != nil {
 			log.Fatalf("Failed to generate token: %v", err)
 		}
 		token = hex.EncodeToString(tokenBytes)
+		tokenWasGenerated = true
 	}
 
 	var absPath string
@@ -1896,7 +1898,11 @@ func main() {
 		scheme = "https"
 	}
 	if token != "" {
-		log.Printf("Authentication enabled. Access URL: %s://localhost:%d/?token=%s", scheme, *port, token)
+		if tokenWasGenerated {
+			log.Printf("Authentication enabled. Access URL: %s://localhost:%d/?token=%s", scheme, *port, token)
+		} else {
+			log.Printf("Authentication enabled. Access URL: %s://localhost:%d/?token=<configured>", scheme, *port)
+		}
 	}
 
 	if *tlsCert != "" && *tlsKey != "" {
