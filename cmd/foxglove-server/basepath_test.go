@@ -295,3 +295,19 @@ func TestAuthCookieIsSecureOnlyOverTLS(t *testing.T) {
 		})
 	}
 }
+
+// The hub's reverse proxy re-injects ?token= on every upstream hop, so the
+// token is still on the URL after the browser has stored the cookie. If the
+// query param were checked first, each hop would redirect again and the page
+// would never load. A valid cookie has to win.
+func TestAuthCookieWinsOverARepeatedTokenQueryParam(t *testing.T) {
+	const prefix = "/svc/octaview-studio"
+	r := httptest.NewRequest(http.MethodGet, prefix+"/?token="+testToken, nil)
+	r.AddCookie(&http.Cookie{Name: "octaview_token", Value: testToken})
+	w := httptest.NewRecorder()
+	authStack(t, prefix).ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d — the cookie holder must be served, not redirected", w.Code, http.StatusOK)
+	}
+}
