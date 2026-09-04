@@ -1,0 +1,48 @@
+# Octaview Service Package manifest, contract version 1.
+#
+# The author's declaration of what this service is and what it can do. edge-hub
+# reads this file out of the image (GET /containers/{id}/archive) and builds its
+# whole UI surface from it, so that no service name appears in hub code. The
+# operator never edits this file.
+#
+# Specification: edge-hub docs/service-package.md, sections 4.2 and 4.9.
+manifest_version: 1
+name: octaview-studio
+title: Octaview Studio
+description: MCAP recording viewer and live Foxglove bridge client.
+kind: viewer
+documentation: https://octaview.ai/en/docs/edge-hub/studio/
+
+# No `config` block: Studio is configured with CLI flags (--mcap-path, --port,
+# --tls, --token), not /svc/config.yaml.
+# No `secrets` block: OCTAVIEW_TOKEN is the UI access token and is declared once,
+# under ui.auth. The manifest never states the same fact twice.
+# No `rules` and no `mcap`: Studio reads recordings, it does not run a rules
+# engine and it does not record.
+
+ui:
+  port: 8152
+  scheme: https
+  # The server accepts its access token only as ?token=<value>, on any path. It
+  # answers with a Set-Cookie (octaview_token) and a redirect to the same URL
+  # with the token stripped, so a client that follows the redirect needs a cookie
+  # jar. There is no Authorization or X-Auth-Token support.
+  auth:
+    env: OCTAVIEW_TOKEN
+    pass_as: query
+  panel:
+    title: Studio
+    icon: timeline
+    roles: [admin, service]
+    # newtab is today's behaviour (UI-4). proxy (UI-2) additionally needs the
+    # hub's session-injecting reverse proxy.
+    embed: newtab
+  # Deep-link templates. The hub URL-encodes every placeholder on expansion and
+  # expands an unknown one to the empty string. {incident_time} and {now} are
+  # Unix seconds. Keep {layout} last: the hub emits the pair with an empty value
+  # when no stored layout matches the view or the file.
+  links:
+    live: "/?ds=foxglove-websocket&ds.url={ws_url}&ds.token={ws_token}&view=recordings&t={now}&incidents={incidents}&layout={layout}"
+    incident: "/?view=recordings&t={incident_time}&incidents={incidents}&layout={layout}"
+    file: "/?file={file_path}&layout={layout}"
+    file_extensions: [.mcap]

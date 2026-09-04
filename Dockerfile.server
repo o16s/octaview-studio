@@ -54,6 +54,14 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=go-build /octaview-studio /octaview-studio
 COPY --from=ffmpeg-fetch /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 
+# Octaview Service Package manifest (edge-hub docs/service-package.md, MAN-1).
+# The hub reads it straight out of the layer with the Docker archive endpoint,
+# which needs no shell and works on a stopped container. The com.o16s.service
+# label deliberately stays in the fleet compose file: MAN-3 compares it with the
+# name below to catch a compose entry pointing at the wrong image, and baking the
+# label into the image would make that check vacuous.
+COPY octaview/manifest.yaml /octaview/manifest.yaml
+
 EXPOSE 8152
 
 VOLUME ["/data/mcap"]
