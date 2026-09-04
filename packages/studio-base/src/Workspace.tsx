@@ -19,8 +19,7 @@ import { makeStyles } from "tss-react/mui";
 
 import Logger from "@foxglove/log";
 import { AppSetting } from "@foxglove/studio-base/AppSetting";
-import { extractFilesFromZip } from "@foxglove/studio-base/util/extractZip";
-import { parseLayoutFile } from "@foxglove/studio-base/util/parseLayoutFile";
+import AgentChat from "@foxglove/studio-base/components/AgentChat";
 import { AppBarProps, AppBar } from "@foxglove/studio-base/components/AppBar";
 import { CustomWindowControlsProps } from "@foxglove/studio-base/components/AppBar/CustomWindowControls";
 import {
@@ -28,7 +27,6 @@ import {
   DataSourceDialogItem,
 } from "@foxglove/studio-base/components/DataSourceDialog";
 import DocumentDropListener from "@foxglove/studio-base/components/DocumentDropListener";
-import AgentChat from "@foxglove/studio-base/components/AgentChat";
 import { EventsList } from "@foxglove/studio-base/components/EventsList";
 import KeyListener from "@foxglove/studio-base/components/KeyListener";
 import {
@@ -51,6 +49,10 @@ import VariablesList from "@foxglove/studio-base/components/VariablesList";
 import { WorkspaceDialogs } from "@foxglove/studio-base/components/WorkspaceDialogs";
 import { useAppContext } from "@foxglove/studio-base/context/AppContext";
 import { useCurrentUser } from "@foxglove/studio-base/context/BaseUserContext";
+import {
+  type LayoutData,
+  useCurrentLayoutActions,
+} from "@foxglove/studio-base/context/CurrentLayoutContext";
 import { EventsStore, useEvents } from "@foxglove/studio-base/context/EventsContext";
 import { useExtensionCatalog } from "@foxglove/studio-base/context/ExtensionCatalogContext";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
@@ -60,21 +62,20 @@ import {
   WorkspaceContextStore,
   useWorkspaceStore,
 } from "@foxglove/studio-base/context/Workspace/WorkspaceContext";
-import {
-  type LayoutData,
-  useCurrentLayoutActions,
-} from "@foxglove/studio-base/context/CurrentLayoutContext";
+import { storeDownloadedFiles } from "@foxglove/studio-base/dataSources/McapServerDataSourceFactory";
 import { useAppConfigurationValue } from "@foxglove/studio-base/hooks";
+import { useAutoUpdate } from "@foxglove/studio-base/hooks/useAutoUpdate";
 import { useConfirm } from "@foxglove/studio-base/hooks/useConfirm";
 import { useDefaultWebLaunchPreference } from "@foxglove/studio-base/hooks/useDefaultWebLaunchPreference";
 import useElectronFilesToOpen from "@foxglove/studio-base/hooks/useElectronFilesToOpen";
-import { useAutoUpdate } from "@foxglove/studio-base/hooks/useAutoUpdate";
 import { usePerformanceMonitor } from "@foxglove/studio-base/hooks/usePerformanceMonitor";
 import { PlayerPresence } from "@foxglove/studio-base/players/types";
 import { PanelStateContextProvider } from "@foxglove/studio-base/providers/PanelStateContextProvider";
 import WorkspaceContextProvider from "@foxglove/studio-base/providers/WorkspaceContextProvider";
-import { storeDownloadedFiles } from "@foxglove/studio-base/dataSources/McapServerDataSourceFactory";
 import { parseAppURLState, parseLayoutParam } from "@foxglove/studio-base/util/appURLState";
+import { extractFilesFromZip } from "@foxglove/studio-base/util/extractZip";
+import { parseLayoutFile } from "@foxglove/studio-base/util/parseLayoutFile";
+import { apiUrl, isServerMode } from "@foxglove/studio-base/util/serverConfig";
 
 import { useWorkspaceActions } from "./context/Workspace/useWorkspaceActions";
 
@@ -622,13 +623,9 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
       return;
     }
 
-    const serverConfig = (globalThis as Record<string, unknown>).OCTAVIEW_STUDIO_SERVER as
-      | { apiBase?: string }
-      | undefined;
-    if (typeof serverConfig !== "object") {
+    if (!isServerMode()) {
       return;
     }
-    const apiBase = serverConfig?.apiBase ?? "";
 
     const abortController = new AbortController();
 
@@ -640,7 +637,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
     (async () => {
       try {
         // Fetch the file directly — no index lookup needed
-        const fileUrl = `${apiBase}/api/mcap/files/${encodeURIComponent(filePath)}`;
+        const fileUrl = apiUrl(`/api/mcap/files/${encodeURIComponent(filePath)}`);
         const fileRes = await fetch(fileUrl, { signal: abortController.signal });
         if (!fileRes.ok) {
           setFileDownloadState(undefined);

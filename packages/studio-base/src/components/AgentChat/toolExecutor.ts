@@ -11,6 +11,7 @@ import { DataSourceArgs } from "@foxglove/studio-base/context/PlayerSelectionCon
 import { storeDownloadedFiles } from "@foxglove/studio-base/dataSources/McapServerDataSourceFactory";
 import { RosDatatypes } from "@foxglove/studio-base/types/RosDatatypes";
 import { getPanelIdForType, PANEL_TITLE_CONFIG_KEY } from "@foxglove/studio-base/util/layout";
+import { apiUrl } from "@foxglove/studio-base/util/serverConfig";
 
 export type TopicInfo = {
   name: string;
@@ -58,9 +59,9 @@ function getFieldPaths(
   prefix: string = "",
   maxDepth: number = 4,
 ): string[] {
-  if (maxDepth <= 0) return [];
+  if (maxDepth <= 0) {return [];}
   const schema = datatypes.get(schemaName);
-  if (!schema) return [];
+  if (!schema) {return [];}
 
   const paths: string[] = [];
   for (const field of schema.definitions) {
@@ -130,7 +131,7 @@ export function createToolExecutor(
 ): ToolExecutorFn {
   const handlers: Record<string, (args: Record<string, unknown>) => Promise<string>> = {
     list_topics: async (): Promise<string> => {
-      return JSON.stringify(ctx.topics) as string;
+      return JSON.stringify(ctx.topics)!;
     },
 
     search_topics: async (args): Promise<string> => {
@@ -140,28 +141,28 @@ export function createToolExecutor(
           t.name.toLowerCase().includes(query) ||
           (t.schemaName?.toLowerCase().includes(query) ?? false),
       );
-      return JSON.stringify(matches) as string;
+      return JSON.stringify(matches)!;
     },
 
     get_panel_types: async (): Promise<string> => {
-      return JSON.stringify(ctx.panelTypes) as string;
+      return JSON.stringify(ctx.panelTypes)!;
     },
 
     get_topic_fields: async (args): Promise<string> => {
       const topicName = args.topic as string;
       const topic = ctx.topics.find((t) => t.name === topicName);
       if (!topic?.schemaName) {
-        return JSON.stringify([]) as string;
+        return JSON.stringify([])!;
       }
       const paths = getFieldPaths(topic.schemaName, ctx.datatypes);
-      return JSON.stringify(paths) as string;
+      return JSON.stringify(paths)!;
     },
 
     search_topic_fields: async (args): Promise<string> => {
       const query = (args.query as string ?? "").toLowerCase();
       const results: Array<{ topic: string; path: string }> = [];
       for (const topic of ctx.topics) {
-        if (!topic.schemaName) continue;
+        if (!topic.schemaName) {continue;}
         const paths = getFieldPaths(topic.schemaName, ctx.datatypes);
         for (const path of paths) {
           if (path.toLowerCase().includes(query)) {
@@ -169,11 +170,11 @@ export function createToolExecutor(
           }
         }
       }
-      return JSON.stringify(results) as string;
+      return JSON.stringify(results)!;
     },
 
     get_current_layout: async (): Promise<string> => {
-      return JSON.stringify(ctx.currentLayout) as string;
+      return JSON.stringify(ctx.currentLayout)!;
     },
 
     add_panel: async (args) => {
@@ -270,7 +271,7 @@ export function createToolExecutor(
     },
 
     get_incidents: async (): Promise<string> => {
-      return JSON.stringify(ctx.incidents) as string;
+      return JSON.stringify(ctx.incidents)!;
     },
 
     read_field_values: async (args): Promise<string> => {
@@ -280,7 +281,7 @@ export function createToolExecutor(
 
       const messages = ctx.getBlockMessages(topic);
       const values = extractFieldValues(messages, field, ctx.startTime);
-      return JSON.stringify(downsample(values, limit)) as string;
+      return JSON.stringify(downsample(values, limit))!;
     },
 
     get_statistics: async (args): Promise<string> => {
@@ -299,8 +300,8 @@ export function createToolExecutor(
       let max = -Infinity;
       for (const { value } of values) {
         sum += value;
-        if (value < min) min = value;
-        if (value > max) max = value;
+        if (value < min) {min = value;}
+        if (value > max) {max = value;}
       }
       const mean = sum / values.length;
 
@@ -318,7 +319,7 @@ export function createToolExecutor(
         stddev,
         startTime: values[0]!.time,
         endTime: values[values.length - 1]!.time,
-      }) as string;
+      })!;
     },
 
     find_peaks: async (args): Promise<string> => {
@@ -356,7 +357,7 @@ export function createToolExecutor(
       const peaks: Array<{ time: number; value: number }> = [];
       for (let i = 0; i < values.length; i++) {
         const val = values[i]!.value;
-        if (val <= threshold) continue;
+        if (val <= threshold) {continue;}
         const prev = i > 0 ? values[i - 1]!.value : -Infinity;
         const next = i < values.length - 1 ? values[i + 1]!.value : -Infinity;
         if (val >= prev && val >= next) {
@@ -365,7 +366,7 @@ export function createToolExecutor(
       }
 
       peaks.sort((a, b) => b.value - a.value);
-      return JSON.stringify(peaks.slice(0, 50)) as string;
+      return JSON.stringify(peaks.slice(0, 50))!;
     },
 
     search_recordings: async (args): Promise<string> => {
@@ -373,7 +374,7 @@ export function createToolExecutor(
       const to = args.to as number | undefined;
       const pattern = (args.pattern as string | undefined)?.toLowerCase();
 
-      const response = await fetchFn(`${globalThis.location?.origin ?? ""}/api/mcap/index`);
+      const response = await fetchFn(apiUrl("/api/mcap/index"));
       if (!response.ok) {
         return `Error fetching recording index: ${response.status} ${response.statusText}`;
       }
@@ -394,15 +395,15 @@ export function createToolExecutor(
       }
 
       const filtered = files.filter((f) => {
-        if (from != undefined && f.endTime < from) return false;
-        if (to != undefined && f.startTime > to) return false;
+        if (from != undefined && f.endTime < from) {return false;}
+        if (to != undefined && f.startTime > to) {return false;}
         if (pattern && !f.path.toLowerCase().includes(pattern) && !f.filename.toLowerCase().includes(pattern)) {
           return false;
         }
         return true;
       });
 
-      return JSON.stringify(filtered) as string;
+      return JSON.stringify(filtered)!;
     },
 
     load_recordings: async (args): Promise<string> => {
@@ -413,7 +414,7 @@ export function createToolExecutor(
 
       const downloadedFiles: File[] = [];
       for (const filePath of filePaths) {
-        const url = `${globalThis.location?.origin ?? ""}/api/mcap/files/${encodeURIComponent(filePath)}`;
+        const url = apiUrl(`/api/mcap/files/${encodeURIComponent(filePath)}`);
         const response = await fetchFn(url);
         if (!response.ok) {
           return `Error downloading ${filePath}: ${response.status} ${response.statusText}`;
@@ -436,11 +437,11 @@ export function createToolExecutor(
     zoom_plot: async (args): Promise<string> => {
       const panelId = args.panelId as string;
       const config: Record<string, unknown> = {};
-      if (args.minX != undefined) config.minXValue = args.minX as number;
-      if (args.maxX != undefined) config.maxXValue = args.maxX as number;
-      if (args.minY != undefined) config.minYValue = args.minY as number;
-      if (args.maxY != undefined) config.maxYValue = args.maxY as number;
-      if (args.rangeSeconds != undefined) config.followingViewWidth = args.rangeSeconds as number;
+      if (args.minX != undefined) {config.minXValue = args.minX as number;}
+      if (args.maxX != undefined) {config.maxXValue = args.maxX as number;}
+      if (args.minY != undefined) {config.minYValue = args.minY as number;}
+      if (args.maxY != undefined) {config.maxYValue = args.maxY as number;}
+      if (args.rangeSeconds != undefined) {config.followingViewWidth = args.rangeSeconds as number;}
 
       ctx.savePanelConfigs({
         configs: [{ id: panelId, config, override: false }],
@@ -524,6 +525,6 @@ export function createToolExecutor(
     if (!handler) {
       throw new Error(`Unknown tool: ${name}`);
     }
-    return handler(args);
+    return await handler(args);
   };
 }

@@ -24,6 +24,7 @@ import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectio
 import { useWorkspaceActions } from "@foxglove/studio-base/context/Workspace/useWorkspaceActions";
 import { useSavedEdgeHubConnections } from "@foxglove/studio-base/dataSources/useSavedEdgeHubConnections";
 import { AppEvent } from "@foxglove/studio-base/services/IAnalytics";
+import { apiUrl, hasDownloads, isServerMode } from "@foxglove/studio-base/util/serverConfig";
 
 const EDGE_HUB_SOURCE_ID = "octaview-edge-hub";
 
@@ -108,12 +109,6 @@ const useStyles = makeStyles()((theme) => ({
   },
 }));
 
-const serverConfig = (globalThis as Record<string, unknown>).OCTAVIEW_STUDIO_SERVER as
-  | { apiBase?: string; hasDownloads?: boolean }
-  | undefined;
-const isServerMode = typeof serverConfig === "object";
-const hasDownloads = isServerMode && serverConfig?.hasDownloads === true;
-
 export default function Start(): JSX.Element {
   const { availableSources, selectSource } = usePlayerSelection();
   const savedConnections = useSavedEdgeHubConnections();
@@ -131,11 +126,11 @@ export default function Start(): JSX.Element {
   const [downloadsLoading, setDownloadsLoading] = useState(false);
 
   useEffect(() => {
-    if (!hasDownloads) {
+    if (!hasDownloads()) {
       return;
     }
     setDownloadsLoading(true);
-    fetch("/api/downloads")
+    fetch(apiUrl("/api/downloads"))
       .then(async (res) => {
         if (res.ok) {
           setDownloads((await res.json()) as DownloadFile[]);
@@ -153,7 +148,7 @@ export default function Start(): JSX.Element {
 
   const handleDownload = useCallback((file: DownloadFile) => {
     const a = document.createElement("a");
-    a.href = `/api/downloads/${encodeURIComponent(file.name)}`;
+    a.href = apiUrl(`/api/downloads/${encodeURIComponent(file.name)}`);
     a.download = file.name;
     a.click();
   }, []);
@@ -167,7 +162,7 @@ export default function Start(): JSX.Element {
       onClick: () => void;
     }> = [];
 
-    if (isServerMode) {
+    if (isServerMode()) {
       items.push({
         key: "browse-recordings",
         text: "Browse recordings",
@@ -293,7 +288,7 @@ export default function Start(): JSX.Element {
               </List>
             </Stack>
           )}
-          {hasDownloads && (
+          {hasDownloads() && (
             <Stack gap={1}>
               <Typography variant="h5" gutterBottom>
                 Download Desktop App

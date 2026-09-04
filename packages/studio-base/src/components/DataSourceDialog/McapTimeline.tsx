@@ -38,6 +38,7 @@ import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectio
 import { useWorkspaceActions } from "@foxglove/studio-base/context/Workspace/useWorkspaceActions";
 import { storeDownloadedFiles } from "@foxglove/studio-base/dataSources/McapServerDataSourceFactory";
 import { exportFilesAsZip } from "@foxglove/studio-base/util/exportZip";
+import { getApiBase } from "@foxglove/studio-base/util/serverConfig";
 
 import View from "./View";
 
@@ -407,12 +408,7 @@ export default function McapTimeline(): JSX.Element {
   });
   const [dateInput, setDateInput] = useState("");
 
-  const apiBase = useMemo(() => {
-    const serverConfig = (globalThis as Record<string, unknown>).OCTAVIEW_STUDIO_SERVER as
-      | { apiBase?: string }
-      | undefined;
-    return serverConfig?.apiBase ?? "";
-  }, []);
+  const apiBase = useMemo(() => getApiBase(), []);
 
   const [files, setFiles] = useState<McapFileIndex[]>([]);
   const [loading, setLoading] = useState(true);
@@ -439,7 +435,7 @@ export default function McapTimeline(): JSX.Element {
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
-      if (!dragRef.current) return;
+      if (!dragRef.current) {return;}
       const delta = e.clientX - dragRef.current.startX;
       setLabelWidth(Math.max(MIN_LABEL_WIDTH, dragRef.current.startWidth + delta));
     };
@@ -506,7 +502,7 @@ export default function McapTimeline(): JSX.Element {
     fetch(`${apiBase}/api/mcap/fields?folder=${encodeURIComponent(folder)}&plottable=true`, {
       signal: controller.signal,
     })
-      .then((r) => r.json())
+      .then(async (r) => await r.json())
       .then((data: { topic: string; field: string; type: string }[]) => {
         setSparklineFields(data);
         setSparklineFieldsLoading(false);
@@ -544,7 +540,7 @@ export default function McapTimeline(): JSX.Element {
             `${apiBase}/api/mcap/sample?folder=${encodeURIComponent(folderParam)}&topic=${encodeURIComponent(topic)}&field=${encodeURIComponent(field)}&start=${viewStart}&end=${viewEnd}&maxPoints=500&decimation=10`,
             { signal: controller.signal },
           )
-            .then((r) => r.json())
+            .then(async (r) => await r.json())
             .then((data: { segments: SparklineSegment[] }) => {
               // Record this fetched range
               const prev = sparklineFetchedRanges.current.get(key) ?? [];
@@ -1164,7 +1160,7 @@ export default function McapTimeline(): JSX.Element {
 
       const workers = Array.from(
         { length: Math.min(DOWNLOAD_CONCURRENCY, effectiveFiles.length) },
-        () => worker(),
+        async () => { await worker(); },
       );
       await Promise.all(workers);
 
@@ -1738,8 +1734,8 @@ export default function McapTimeline(): JSX.Element {
                   let maxVal = -Infinity;
                   for (const seg of segments) {
                     for (const v of seg.values) {
-                      if (v < minVal) minVal = v;
-                      if (v > maxVal) maxVal = v;
+                      if (v < minVal) {minVal = v;}
+                      if (v > maxVal) {maxVal = v;}
                     }
                   }
                   if (!isFinite(minVal)) {
@@ -1941,7 +1937,7 @@ export default function McapTimeline(): JSX.Element {
                               regex.test(`${f.topic}.${f.field}`) || regex.test(f.field),
                             );
                             if (matches.length > 0) {
-                              const folder = sparklinePopover!.folder;
+                              const folder = sparklinePopover.folder;
                               setSparklineConfigs((prev) => {
                                 const next = new Map(prev);
                                 const list = [...(next.get(folder) ?? [])];

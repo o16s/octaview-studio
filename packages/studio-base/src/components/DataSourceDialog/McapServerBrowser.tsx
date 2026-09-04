@@ -22,6 +22,7 @@ import { makeStyles } from "tss-react/mui";
 import Stack from "@foxglove/studio-base/components/Stack";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import { useWorkspaceActions } from "@foxglove/studio-base/context/Workspace/useWorkspaceActions";
+import { getApiBase } from "@foxglove/studio-base/util/serverConfig";
 
 import View from "./View";
 
@@ -238,12 +239,7 @@ export default function McapServerBrowser({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const apiBase = useMemo(() => {
-    const serverConfig = (globalThis as Record<string, unknown>).OCTAVIEW_STUDIO_SERVER as
-      | { apiBase?: string }
-      | undefined;
-    return serverConfig?.apiBase ?? "";
-  }, []);
+  const apiBase = useMemo(() => getApiBase(), []);
 
   const tree = useMemo(() => buildTree(files), [files]);
 
