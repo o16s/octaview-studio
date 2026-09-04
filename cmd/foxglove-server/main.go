@@ -751,7 +751,13 @@ func main() {
 	useTLS := flag.Bool("tls", false, "Enable HTTPS with auto-generated self-signed certificate")
 	authToken := flag.String("token", "", "Authentication token (like Jupyter). If set, requires ?token=<value> on first visit. Stored in a browser cookie.")
 	generateToken := flag.Bool("generate-token", false, "Auto-generate a random authentication token and print the URL")
+	basePathFlag := flag.String("base-path", "", "Serve under a reverse-proxy path prefix (e.g. /svc/octaview-studio). When unset, the X-Forwarded-Prefix header is honoured instead.")
 	flag.Parse()
+
+	basePath := normalizePrefix(*basePathFlag)
+	if *basePathFlag != "" && basePath == "" {
+		log.Fatalf("Invalid --base-path %q: expected a path like /svc/octaview-studio", *basePathFlag)
+	}
 
 	// Resolve auth token
 	token := *authToken
@@ -1789,104 +1795,32 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create sub filesystem: %v", err)
 	}
-	fileServer := http.FileServer(http.FS(staticFS))
 
-	// Read index.html and optionally inject server mode config
-	indexBytes, err := fs.ReadFile(staticFS, "index.html")
-	if err != nil {
-		log.Fatalf("Failed to read index.html: %v", err)
-	}
-	indexHTML := string(indexBytes)
-	serverConfig := make(map[string]interface{})
+	// The page reads its API base from this config. It is empty when Studio is
+	// served at the root, and the path prefix when it is served behind a proxy.
+	baseServerConfig := make(map[string]any)
 	if absPath != "" {
-		serverConfig["apiBase"] = ""
+		baseServerConfig["apiBase"] = ""
 	}
 	if absDownloadsPath != "" {
-		serverConfig["hasDownloads"] = true
-	}
-	if len(serverConfig) > 0 {
-		configJSON, _ := json.Marshal(serverConfig)
-		indexHTML = strings.Replace(
-			indexHTML,
-			"global = globalThis;",
-			fmt.Sprintf("global = globalThis;\n      globalThis.OCTAVIEW_STUDIO_SERVER = %s;", configJSON),
-			1,
-		)
+		baseServerConfig["hasDownloads"] = true
 	}
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
+	staticHandler, err := newStaticHandler(staticFS, baseServerConfig)
+	if err != nil {
+		log.Fatalf("Failed to prepare the web app: %v", err)
+	}
+	mux.HandleFunc("/", staticHandler)
 
-		// Serve patched index.html for root and SPA routes
-		serveIndex := path == "/"
-		if !serveIndex {
-			cleanPath := strings.TrimPrefix(path, "/")
-			if _, err := fs.Stat(staticFS, cleanPath); err != nil {
-				serveIndex = true
-			}
-		}
-
-		if serveIndex {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Write([]byte(indexHTML))
-			return
-		}
-
-		fileServer.ServeHTTP(w, r)
-	})
-
-	// Wrap with token authentication if configured
+	// Everything is behind the access token, and everything is mounted under the
+	// reverse-proxy prefix when there is one. withBasePath must be outermost so
+	// that the auth middleware sees the stripped path and can read the prefix
+	// back for the cookie scope and the post-sign-in redirect.
 	var handler http.Handler = mux
 	if token != "" {
-		const cookieName = "octaview_token"
-		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Check cookie first
-			if cookie, err := r.Cookie(cookieName); err == nil && cookie.Value == token {
-				mux.ServeHTTP(w, r)
-				return
-			}
-
-			// Check ?token= query param — if valid, set cookie and redirect to clean URL
-			if qToken := r.URL.Query().Get("token"); qToken == token {
-				http.SetCookie(w, &http.Cookie{
-					Name:     cookieName,
-					Value:    token,
-					Path:     "/",
-					MaxAge:   365 * 24 * 3600, // 1 year
-					HttpOnly: true,
-					SameSite: http.SameSiteLaxMode,
-				})
-				// Redirect to URL without token param
-				cleanURL := *r.URL
-				q := cleanURL.Query()
-				q.Del("token")
-				cleanURL.RawQuery = q.Encode()
-				http.Redirect(w, r, cleanURL.String(), http.StatusFound)
-				return
-			}
-
-			// Unauthorized — return a simple login page
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusUnauthorized)
-			fmt.Fprint(w, `<!DOCTYPE html>
-<html><head><title>octaview Studio</title>
-<style>
-  body { font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0E0E16; color: #F7F7F5; }
-  .box { text-align: center; max-width: 400px; }
-  h1 { font-size: 24px; margin-bottom: 8px; }
-  p { color: #B9B9C2; margin-bottom: 24px; }
-  input { width: 100%; padding: 12px; border: 1px solid #2B2B3A; border-radius: 8px; background: #191926; color: #F7F7F5; font-size: 16px; box-sizing: border-box; outline: none; }
-  input:focus { border-color: #FF5C00; }
-  button { width: 100%; padding: 12px; margin-top: 12px; border: none; border-radius: 8px; background: #FF5C00; color: white; font-size: 16px; font-weight: 700; cursor: pointer; }
-  button:hover { background: #E05000; }
-</style></head>
-<body><div class="box">
-  <h1>octaview Studio</h1>
-  <p>Enter access token to continue</p>
-  <form method="get"><input name="token" type="password" placeholder="Token" autofocus /><button type="submit">Sign in</button></form>
-</div></body></html>`)
-		})
+		handler = newAuthMiddleware(token, *tlsCert != "" || *useTLS)(handler)
 	}
+	handler = withBasePath(handler, basePath)
 
 	addr := fmt.Sprintf(":%d", *port)
 	if absPath != "" {
@@ -1897,11 +1831,16 @@ func main() {
 	if *tlsCert != "" || *useTLS {
 		scheme = "https"
 	}
+	if basePath != "" {
+		log.Printf("Serving under base path: %s/", basePath)
+	}
 	if token != "" {
+		// edge-hub reads the token back out of these logs, so keep the
+		// "?token=" shape. A configured token is never printed.
 		if tokenWasGenerated {
-			log.Printf("Authentication enabled. Access URL: %s://localhost:%d/?token=%s", scheme, *port, token)
+			log.Printf("Authentication enabled. Access URL: %s://localhost:%d%s/?token=%s", scheme, *port, basePath, token)
 		} else {
-			log.Printf("Authentication enabled. Access URL: %s://localhost:%d/?token=<configured>", scheme, *port)
+			log.Printf("Authentication enabled. Access URL: %s://localhost:%d%s/?token=<configured>", scheme, *port, basePath)
 		}
 	}
 
