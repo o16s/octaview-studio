@@ -62,7 +62,6 @@ import {
   WorkspaceContextStore,
   useWorkspaceStore,
 } from "@foxglove/studio-base/context/Workspace/WorkspaceContext";
-import { storeDownloadedFiles } from "@foxglove/studio-base/dataSources/McapServerDataSourceFactory";
 import { useAppConfigurationValue } from "@foxglove/studio-base/hooks";
 import { useAutoUpdate } from "@foxglove/studio-base/hooks/useAutoUpdate";
 import { useConfirm } from "@foxglove/studio-base/hooks/useConfirm";
@@ -74,6 +73,7 @@ import { PanelStateContextProvider } from "@foxglove/studio-base/providers/Panel
 import WorkspaceContextProvider from "@foxglove/studio-base/providers/WorkspaceContextProvider";
 import { parseAppURLState, parseLayoutParam } from "@foxglove/studio-base/util/appURLState";
 import { extractFilesFromZip } from "@foxglove/studio-base/util/extractZip";
+import { parseFileDeepLink } from "@foxglove/studio-base/util/fileDeepLink";
 import { parseLayoutFile } from "@foxglove/studio-base/util/parseLayoutFile";
 import { apiUrl, isServerMode } from "@foxglove/studio-base/util/serverConfig";
 
@@ -154,9 +154,9 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
   const playerPresence = useMessagePipeline(selectPlayerPresence);
   const playerProblems = useMessagePipeline(selectPlayerProblems);
   const embedMode = useIsEmbedMode();
-  const [fileDownloadState, setFileDownloadState] = useState<
-    { filename: string; loaded: number; total: number; phase?: string } | undefined
-  >();
+  // Name of the recording the ?file= deep link is opening, while the player
+  // starts up. Undefined once the player has taken over.
+  const [openingFile, setOpeningFile] = useState<string | undefined>();
 
   const dataSourceDialog = useWorkspaceStore(selectWorkspaceDataSourceDialog);
   const leftSidebarItem = useWorkspaceStore(selectWorkspaceLeftSidebarItem);
@@ -612,84 +612,67 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
   }, []);
 
   // Open a specific file directly via ?file= URL param.
-  // Matches the path against the server MCAP index, downloads, and opens it.
+  //
+  // The file is handed to the player as a remote URL, not downloaded first. The
+  // MCAP reader then asks for only the byte ranges it needs (HTTP Range), so the
+  // first frame arrives in about a second instead of after the whole transfer,
+  // and a seek to a known time does not read everything before it.
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-    const params = new URLSearchParams(window.location.search);
-    const filePath = params.get("file");
-    if (!filePath) {
-      return;
-    }
-
     if (!isServerMode()) {
       return;
     }
+    const link = parseFileDeepLink(window.location.search, apiUrl);
+    if (!link) {
+      return;
+    }
+    const { filePath, fileUrl } = link;
 
+    setOpeningFile(link.displayName);
+    selectSource("mcap-server", {
+      type: "connection",
+      params: { urls: JSON.stringify([fileUrl]) },
+    });
+
+    // A player that cannot load the recording reports it in the problems panel,
+    // which is easy to miss for the common case of a link to a deleted file.
+    // One HEAD, sent beside the open rather than before it, keeps the old error
+    // message without delaying the first frame.
     const abortController = new AbortController();
-
-    const displayName = filePath.includes("/")
-      ? filePath.slice(filePath.lastIndexOf("/") + 1)
-      : filePath;
-    setFileDownloadState({ filename: displayName, loaded: 0, total: 0, phase: "Downloading…" });
-
-    (async () => {
-      try {
-        // Fetch the file directly — no index lookup needed
-        const fileUrl = apiUrl(`/api/mcap/files/${encodeURIComponent(filePath)}`);
-        const fileRes = await fetch(fileUrl, { signal: abortController.signal });
-        if (!fileRes.ok) {
-          setFileDownloadState(undefined);
-          log.error(`File not found: ${filePath} (HTTP ${fileRes.status})`);
+    fetch(fileUrl, { method: "HEAD", signal: abortController.signal })
+      .then((res) => {
+        if (!res.ok) {
+          log.error(`File not found: ${filePath} (HTTP ${res.status})`);
           enqueueSnackbar(`Recording not found: ${filePath}`, { variant: "error" });
-          return;
         }
-
-        const contentLength = parseInt(fileRes.headers.get("Content-Length") ?? "0", 10);
-        const fileReader = fileRes.body?.getReader();
-        if (!fileReader) {
-          throw new Error("No response body for file download");
-        }
-
-        setFileDownloadState({ filename: displayName, loaded: 0, total: contentLength });
-        const chunks: Uint8Array[] = [];
-        let loaded = 0;
-        for (;;) {
-          const { done, value: chunk } = await fileReader.read();
-          if (done) {
-            break;
-          }
-          chunks.push(chunk);
-          loaded += chunk.byteLength;
-          setFileDownloadState({ filename: displayName, loaded, total: contentLength });
-        }
-        setFileDownloadState(undefined);
-
-        const blob = new Blob(chunks);
-        const file = new File([blob], displayName);
-
-        const downloadId = `file-${Date.now()}`;
-        storeDownloadedFiles(downloadId, [file]);
-        selectSource("mcap-server", {
-          type: "connection",
-          params: { downloadId },
-        });
-      } catch (err) {
-        setFileDownloadState(undefined);
+      })
+      .catch((err: unknown) => {
         if (err instanceof Error && err.name === "AbortError") {
           return;
         }
-        log.error(`Failed to open file from URL: ${err}`);
-        enqueueSnackbar(`Failed to open recording: ${filePath}`, { variant: "error" });
-      }
-    })();
+        log.error(`Failed to reach ${fileUrl}: ${err}`);
+      });
 
     return () => {
       abortController.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Take the overlay down as soon as the player has taken over, whether it
+  // loaded the recording or failed on it. There is no transfer to measure any
+  // more, so the player's own state is the only thing that knows when the wait
+  // is over.
+  useEffect(() => {
+    if (
+      playerPresence !== PlayerPresence.NOT_PRESENT &&
+      playerPresence !== PlayerPresence.INITIALIZING
+    ) {
+      setOpeningFile(undefined);
+    }
+  }, [playerPresence]);
 
   const appBar = useMemo(
     () => (
@@ -727,7 +710,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
       <SyncAdapters />
       <KeyListener global keyDownHandlers={keyDownHandlers} />
       <div className={classes.container} ref={containerRef} tabIndex={0}>
-        {fileDownloadState && (
+        {openingFile != undefined && (
           <Stack
             alignItems="center"
             justifyContent="center"
@@ -740,25 +723,9 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
           >
             <Stack alignItems="center" gap={1} style={{ width: 320 }}>
               <Typography variant="subtitle1" color="white">
-                {fileDownloadState.phase ?? `Downloading ${fileDownloadState.filename}`}
+                {`Opening ${openingFile}`}
               </Typography>
-              {fileDownloadState.phase != null ? (
-                <LinearProgress variant="indeterminate" style={{ width: "100%" }} />
-              ) : fileDownloadState.total > 0 ? (
-                <>
-                  <LinearProgress
-                    variant="determinate"
-                    value={(fileDownloadState.loaded / fileDownloadState.total) * 100}
-                    style={{ width: "100%" }}
-                  />
-                  <Typography variant="caption" color="grey.400">
-                    {(fileDownloadState.loaded / 1024 / 1024).toFixed(1)} /{" "}
-                    {(fileDownloadState.total / 1024 / 1024).toFixed(1)} MB
-                  </Typography>
-                </>
-              ) : (
-                <LinearProgress variant="indeterminate" style={{ width: "100%" }} />
-              )}
+              <LinearProgress variant="indeterminate" style={{ width: "100%" }} />
             </Stack>
           </Stack>
         )}
