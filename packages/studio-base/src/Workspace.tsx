@@ -628,36 +628,11 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
     if (!link) {
       return;
     }
-    const { filePath, fileUrl } = link;
-
     setOpeningFile(link.displayName);
     selectSource("mcap-server", {
       type: "connection",
-      params: { urls: JSON.stringify([fileUrl]) },
+      params: { urls: JSON.stringify([link.fileUrl]) },
     });
-
-    // A player that cannot load the recording reports it in the problems panel,
-    // which is easy to miss for the common case of a link to a deleted file.
-    // One HEAD, sent beside the open rather than before it, keeps the old error
-    // message without delaying the first frame.
-    const abortController = new AbortController();
-    fetch(fileUrl, { method: "HEAD", signal: abortController.signal })
-      .then((res) => {
-        if (!res.ok) {
-          log.error(`File not found: ${filePath} (HTTP ${res.status})`);
-          enqueueSnackbar(`Recording not found: ${filePath}`, { variant: "error" });
-        }
-      })
-      .catch((err: unknown) => {
-        if (err instanceof Error && err.name === "AbortError") {
-          return;
-        }
-        log.error(`Failed to reach ${fileUrl}: ${err}`);
-      });
-
-    return () => {
-      abortController.abort();
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
