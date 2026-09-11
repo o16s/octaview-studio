@@ -507,12 +507,23 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
 
     // Apply any available data source args
     if (unappliedSourceArgs.ds) {
+      // Every connection source reads what to open out of its `ds.` parameters,
+      // so one named without any cannot produce a player. Selecting it anyway
+      // clears the player that is open, and edge-hub sends exactly that on an
+      // event link: `?ds=mcap-server&file=...`, where `?file=` names the
+      // recording and the effect below selects the source. Skipping here is
+      // what makes that link work whichever effect runs first.
+      if (unappliedSourceArgs.dsParams == undefined) {
+        log.debug("Ignoring source from url: no ds. parameters", unappliedSourceArgs);
+        setUnappliedSourceArgs({ ds: undefined, dsParams: undefined });
+        return;
+      }
       log.debug("Initialising source from url", unappliedSourceArgs);
       selectSource(unappliedSourceArgs.ds, {
         type: "connection",
         params: unappliedSourceArgs.dsParams,
       });
-      selectEvent(unappliedSourceArgs.dsParams?.eventId);
+      selectEvent(unappliedSourceArgs.dsParams.eventId);
       setUnappliedSourceArgs({ ds: undefined, dsParams: undefined });
     }
   }, [selectEvent, selectSource, unappliedSourceArgs, setUnappliedSourceArgs]);

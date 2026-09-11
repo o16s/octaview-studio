@@ -213,3 +213,29 @@ describe("layoutLinkParams", () => {
     expect(layoutLinkParams(search).layout).toBeUndefined();
   });
 });
+
+describe("parseAppURLState with a bare ds", () => {
+  // The guard in Workspace's "Load data source from URL" effect keys on
+  // dsParams being undefined, so pin what a link without any `ds.` parameter
+  // parses to. edge-hub sends this shape on an event link.
+  const eventLink = new URL(
+    "https://jetson:8152/?ds=mcap-server&layout=" +
+      "&file=%2Fmnt%2Fdatalog%2Fzed2mqtt%2Fevents%2Fcam1%2Fcam1_event.mcap" +
+      "&time=2026-09-11T09%3A44%3A14.340712543Z",
+  );
+
+  it("names the source but gives it nothing to open", () => {
+    const state = parseAppURLState(eventLink);
+
+    expect(state?.ds).toBe("mcap-server");
+    expect(state?.dsParams).toBeUndefined();
+  });
+
+  it("still reads the time, which the ?file= source seeks to", () => {
+    expect(parseAppURLState(eventLink)?.time).toBeDefined();
+  });
+
+  it("carries no layout from an empty layout parameter", () => {
+    expect(parseAppURLState(eventLink)?.layoutParam).toBeUndefined();
+  });
+});
