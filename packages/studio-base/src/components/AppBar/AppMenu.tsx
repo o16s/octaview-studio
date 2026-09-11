@@ -9,10 +9,7 @@ import { makeStyles } from "tss-react/mui";
 
 import { AppSetting } from "@foxglove/studio-base/AppSetting";
 import TextMiddleTruncate from "@foxglove/studio-base/components/TextMiddleTruncate";
-import { useCurrentLayoutActions } from "@foxglove/studio-base/context/CurrentLayoutContext";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
-import { getCurrentFiles } from "@foxglove/studio-base/dataSources/McapServerDataSourceFactory";
-import { exportFilesAsZip } from "@foxglove/studio-base/util/exportZip";
 import {
   WorkspaceContextStore,
   useWorkspaceStore,
@@ -57,7 +54,6 @@ export function AppMenu(props: AppMenuProps): JSX.Element {
   const leftSidebarOpen = useWorkspaceStore(selectLeftSidebarOpen);
   const rightSidebarOpen = useWorkspaceStore(selectRightSidebarOpen);
   const { sidebarActions, dialogActions, layoutActions } = useWorkspaceActions();
-  const { getCurrentLayoutState } = useCurrentLayoutActions();
   const [videoExportEnabled = false] = useAppConfigurationValue<boolean>(
     AppSetting.ENABLE_VIDEO_EXPORT,
   );
@@ -72,8 +68,6 @@ export function AppMenu(props: AppMenuProps): JSX.Element {
   }, []);
 
   // FILE
-
-  const hasOpenFiles = open && getCurrentFiles() != undefined;
 
   const fileItems = useMemo(() => {
     const items: AppBarMenuItem[] = [
@@ -105,25 +99,6 @@ export function AppMenu(props: AppMenuProps): JSX.Element {
         },
       },
       { type: "divider" },
-      {
-        type: "item",
-        label: t("exportRecordings", { defaultValue: "Export recordings as ZIP" }),
-        key: "export-zip",
-        disabled: !hasOpenFiles,
-        onClick: () => {
-          const files = getCurrentFiles();
-          if (files) {
-            const allFiles = [...files];
-            const layoutData = getCurrentLayoutState().selectedLayout?.data;
-            if (layoutData) {
-              const layoutJson = JSON.stringify(layoutData, undefined, 2) ?? "";
-              allFiles.push(new File([layoutJson], "layout.json", { type: "application/json" }));
-            }
-            void exportFilesAsZip(allFiles);
-          }
-          handleNestedMenuClose();
-        },
-      },
       ...(videoExportEnabled
         ? [
             {
@@ -159,9 +134,7 @@ export function AppMenu(props: AppMenuProps): JSX.Element {
     dialogActions.dataSource,
     dialogActions.openFile,
     dialogActions.exportVideo,
-    getCurrentLayoutState,
     handleNestedMenuClose,
-    hasOpenFiles,
     recentSources,
     selectRecent,
     t,

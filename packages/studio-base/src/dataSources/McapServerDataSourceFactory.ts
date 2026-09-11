@@ -12,20 +12,12 @@ import { Player } from "@foxglove/studio-base/players/types";
 // Module-level store for pre-downloaded files passed from McapTimeline
 const pendingDownloads = new Map<string, File[]>();
 
-// Keep a reference to the most recently opened files for export
-let currentOpenFiles: File[] | undefined;
-
 /**
  * Store downloaded files so the factory can pick them up by ID.
  * Called by McapTimeline after sequential download completes.
  */
 export function storeDownloadedFiles(id: string, files: File[]): void {
   pendingDownloads.set(id, files);
-}
-
-/** Get the currently open files (for ZIP export). */
-export function getCurrentFiles(): File[] | undefined {
-  return currentOpenFiles;
 }
 
 class McapServerDataSourceFactory implements IDataSourceFactory {
@@ -53,7 +45,6 @@ class McapServerDataSourceFactory implements IDataSourceFactory {
       const files = pendingDownloads.get(downloadId);
       pendingDownloads.delete(downloadId);
       if (files && files.length > 0) {
-        currentOpenFiles = files;
         const name = files.length === 1
           ? (files[0]!.name)
           : `${files.length} files`;
@@ -72,9 +63,8 @@ class McapServerDataSourceFactory implements IDataSourceFactory {
       }
     }
 
-    // URL-based loading. The player reads these by byte range (HTTP Range) and
-    // never holds a whole file, so there is nothing here for "Export recordings
-    // as ZIP" to hand out.
+    // URL-based loading. The player reads these by byte range (HTTP Range), so
+    // it starts at once and never holds a whole recording in the page.
     const urlsParam = args.params?.urls;
     if (!urlsParam) {
       return;
@@ -93,11 +83,6 @@ class McapServerDataSourceFactory implements IDataSourceFactory {
     const name = urls.length === 1
       ? decodeURIComponent(urls[0]!.split("/").pop() ?? urls[0]!)
       : `${urls.length} files`;
-
-    // Forget the files of the previous open. Leaving them would keep the export
-    // menu item enabled and make it write out a different recording from the
-    // one on screen.
-    currentOpenFiles = undefined;
 
     const source = new WorkerIterableSource({
       initWorker,

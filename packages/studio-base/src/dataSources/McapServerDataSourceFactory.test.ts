@@ -4,14 +4,11 @@
 
 /** @jest-environment jsdom */
 
-import McapServerDataSourceFactory, {
-  getCurrentFiles,
-  storeDownloadedFiles,
-} from "./McapServerDataSourceFactory";
+import McapServerDataSourceFactory, { storeDownloadedFiles } from "./McapServerDataSourceFactory";
 
 // The factory launches a web worker only when the player initializes, which
 // these tests never reach. Constructing one is enough to exercise the branch
-// that decides what "Export recordings as ZIP" can hand out.
+// that picks between pre-downloaded files and remote URLs.
 jest.mock("@foxglove/studio-base/players/IterablePlayer", () => ({
   IterablePlayer: jest.fn(),
   WorkerIterableSource: jest.fn(),
@@ -20,32 +17,39 @@ jest.mock("@foxglove/studio-base/players/IterablePlayer", () => ({
 describe("McapServerDataSourceFactory", () => {
   const factory = new McapServerDataSourceFactory();
 
-  const openDownloaded = (name: string) => {
-    const id = `test-${name}`;
-    storeDownloadedFiles(id, [new File(["x"], name)]);
-    return factory.initialize({ params: { downloadId: id } } as never);
-  };
+  const initialize = (params: Record<string, string>) => factory.initialize({ params } as never);
 
-  it("keeps downloaded files for the ZIP export", () => {
-    openDownloaded("a.mcap");
+  it("opens files that were downloaded beforehand", () => {
+    storeDownloadedFiles("dl-1", [new File(["x"], "a.mcap")]);
 
-    expect(getCurrentFiles()?.map((f) => f.name)).toEqual(["a.mcap"]);
+    expect(initialize({ downloadId: "dl-1" })).toBeDefined();
   });
 
-  it("has no files to export after opening by URL", () => {
-    openDownloaded("a.mcap");
-    factory.initialize({
-      params: { urls: JSON.stringify(["/api/mcap/files/b.mcap"]) },
-    } as never);
+  it("uses each download id once", () => {
+    storeDownloadedFiles("dl-2", [new File(["x"], "a.mcap")]);
+    initialize({ downloadId: "dl-2" });
 
-    // Not the stale ["a.mcap"]: a URL source is read by byte range, so no whole
-    // file exists, and the export must report that rather than write out the
-    // recording opened before this one.
-    expect(getCurrentFiles()).toBeUndefined();
+    // The second open finds nothing under that id and has no urls to fall back
+    // on, so it must not give back a player for files that are already gone.
+    expect(initialize({ downloadId: "dl-2" })).toBeUndefined();
+  });
+
+  it("opens one remote URL", () => {
+    expect(initialize({ urls: `["/api/mcap/files/a.mcap"]` })).toBeDefined();
+  });
+
+  it("opens several remote URLs together", () => {
+    const urls = `["/api/mcap/files/a.mcap","/api/mcap/files/b.mcap"]`;
+
+    expect(initialize({ urls })).toBeDefined();
+  });
+
+  it("accepts a bare URL that is not a JSON array", () => {
+    expect(initialize({ urls: "/api/mcap/files/a.mcap" })).toBeDefined();
   });
 
   it("returns no player when the parameters name nothing to open", () => {
-    expect(factory.initialize({ params: {} } as never)).toBeUndefined();
-    expect(factory.initialize({ params: { urls: "[]" } } as never)).toBeUndefined();
+    expect(initialize({})).toBeUndefined();
+    expect(initialize({ urls: "[]" })).toBeUndefined();
   });
 });

@@ -36,7 +36,6 @@ import { makeStyles } from "tss-react/mui";
 import Stack from "@foxglove/studio-base/components/Stack";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import { useWorkspaceActions } from "@foxglove/studio-base/context/Workspace/useWorkspaceActions";
-import { storeDownloadedFiles } from "@foxglove/studio-base/dataSources/McapServerDataSourceFactory";
 import { exportFilesAsZip } from "@foxglove/studio-base/util/exportZip";
 import { getApiBase } from "@foxglove/studio-base/util/serverConfig";
 
@@ -1182,20 +1181,24 @@ export default function McapTimeline(): JSX.Element {
     }
   }, [apiBase, effectiveFiles]);
 
-  // Download files and open in player
-  const onOpen = useCallback(async () => {
-    const downloaded = await downloadFiles();
-    if (!downloaded || downloaded.length === 0) {
+  // Open the selected recordings straight from the server.
+  //
+  // The player reads them by byte range (HTTP Range), so playback starts at
+  // once instead of after every selected file has been transferred. Export
+  // still downloads, because writing a ZIP needs the bytes.
+  const onOpen = useCallback(() => {
+    if (effectiveFiles.length === 0) {
       return;
     }
-    const downloadId = `dl-${Date.now()}`;
-    storeDownloadedFiles(downloadId, downloaded);
+    const urls = effectiveFiles.map(
+      (file) => `${apiBase}/api/mcap/files/${encodeURIComponent(file.path)}`,
+    );
     selectSource("mcap-server", {
       type: "connection",
-      params: { downloadId },
+      params: { urls: JSON.stringify(urls) },
     });
     dialogActions.dataSource.close();
-  }, [downloadFiles, dialogActions.dataSource, selectSource]);
+  }, [apiBase, dialogActions.dataSource, effectiveFiles, selectSource]);
 
   // Download files and export as ZIP to disk (client-side)
   const onExport = useCallback(async () => {

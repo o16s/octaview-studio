@@ -7,6 +7,7 @@ import { Immutable, MessageEvent } from "@foxglove/studio";
 import { TopicSelection, TopicStats } from "@foxglove/studio-base/players/types";
 
 import { McapIterableSource } from "./McapIterableSource";
+import { cacheSizeForSourceCount } from "./RemoteFileReadable";
 import {
   GetBackfillMessagesArgs,
   IIterableSource,
@@ -27,9 +28,12 @@ export class McapMultiSource implements IIterableSource {
   #sourceFolders: (string | undefined)[];
 
   public constructor(sources: Blob[] | string[]) {
+    // Every remote source keeps its own byte cache, so the budget is shared out
+    // rather than taken once per recording.
+    const cacheSizeInBytes = cacheSizeForSourceCount(sources.length);
     this.#sources = sources.map((source) =>
       typeof source === "string"
-        ? new McapIterableSource({ type: "url", url: source })
+        ? new McapIterableSource({ type: "url", url: source, cacheSizeInBytes })
         : new McapIterableSource({ type: "file", file: source }),
     );
     // Extract name and folder from source paths.
