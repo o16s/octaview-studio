@@ -36,7 +36,6 @@ import { makeStyles } from "tss-react/mui";
 import Stack from "@foxglove/studio-base/components/Stack";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import { useWorkspaceActions } from "@foxglove/studio-base/context/Workspace/useWorkspaceActions";
-import { exportFilesAsZip } from "@foxglove/studio-base/util/exportZip";
 import { getApiBase } from "@foxglove/studio-base/util/serverConfig";
 
 import View from "./View";
@@ -122,15 +121,6 @@ function parseUrlParams(): {
 
 type ViewMode = "day" | "week" | "month";
 
-type DownloadProgress = {
-  fileIndex: number;
-  totalFiles: number;
-  currentFilename: string;
-  currentLoaded: number;
-  currentTotal: number;
-  completedBytes: number;
-  grandTotal: number;
-};
 
 type SparklineField = { topic: string; field: string; type: string };
 
@@ -177,8 +167,6 @@ const BAR_Y_OFFSET = (ROW_HEIGHT - BAR_HEIGHT) / 2;
 const MIN_BAR_WIDTH = 4;
 const DEFAULT_SELECTION_SPAN_MIN = 5;
 const SPARKLINE_STORAGE_KEY = "mcapTimeline.sparklines";
-const DOWNLOAD_CONCURRENCY = 4; // number of parallel file downloads
-const PROGRESS_THROTTLE_MS = 100; // minimum interval between progress UI updates
 
 const VIEW_DURATIONS: Record<ViewMode, number> = {
   day: 24 * 3600,
@@ -335,18 +323,6 @@ const useStyles = makeStyles()((theme) => ({
     "&:focus": {
       borderColor: theme.palette.primary.main,
     },
-  },
-  downloadOverlay: {
-    position: "absolute",
-    inset: 0,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: theme.palette.background.paper,
-    zIndex: 20,
-    gap: theme.spacing(2),
-    padding: theme.spacing(4),
   },
 }));
 
@@ -608,9 +584,6 @@ export default function McapTimeline(): JSX.Element {
   }, [timelineVisible]);
 
   // Download state
-  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | undefined>();
-  const downloadAbortRef = useRef<AbortController | undefined>();
-  const downloadStartRef = useRef<number>(0);
 
   // Fetch index from server (streaming NDJSON)
   useEffect(() => {
@@ -1059,133 +1032,10 @@ export default function McapTimeline(): JSX.Element {
 
   const selectedPaths = useMemo(() => new Set(selectedFiles.map((f) => f.path)), [selectedFiles]);
 
-  // Download effective files in parallel with throttled progress updates.
-  // Returns the downloaded File[] or undefined if aborted/failed.
-  const downloadFiles = useCallback(async (): Promise<File[] | undefined> => {
-    if (effectiveFiles.length === 0) {
-      return undefined;
-    }
-
-    const abortController = new AbortController();
-    downloadAbortRef.current = abortController;
-
-    const grandTotal = effectiveFiles.reduce((sum, f) => sum + f.size, 0);
-
-    // Per-file progress tracking (shared across parallel workers)
-    const fileLoaded = new Array<number>(effectiveFiles.length).fill(0);
-    const fileComplete = new Array<boolean>(effectiveFiles.length).fill(false);
-    let lastProgressUpdate = 0;
-
-    const flushProgress = (force: boolean) => {
-      const now = Date.now();
-      if (!force && now - lastProgressUpdate < PROGRESS_THROTTLE_MS) {
-        return;
-      }
-      lastProgressUpdate = now;
-
-      const totalLoaded = fileLoaded.reduce((a, b) => a + b, 0);
-      // Find the first incomplete file for the label
-      let activeIdx = effectiveFiles.length - 1;
-      for (let j = 0; j < effectiveFiles.length; j++) {
-        if (!fileComplete[j]) {
-          activeIdx = j;
-          break;
-        }
-      }
-      const completedCount = fileComplete.filter(Boolean).length;
-
-      setDownloadProgress({
-        fileIndex: completedCount,
-        totalFiles: effectiveFiles.length,
-        currentFilename: effectiveFiles[activeIdx]!.filename,
-        currentLoaded: 0,
-        currentTotal: 0,
-        completedBytes: totalLoaded,
-        grandTotal,
-      });
-    };
-
-    // Download a single file, updating shared progress
-    const downloadOne = async (idx: number): Promise<File> => {
-      const fileInfo = effectiveFiles[idx]!;
-      const url = `${apiBase}/api/mcap/files/${encodeURIComponent(fileInfo.path)}`;
-
-      const response = await fetch(url, { signal: abortController.signal });
-      if (!response.ok) {
-        throw new Error(`Failed to download ${fileInfo.filename}: HTTP ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error(`No response body for ${fileInfo.filename}`);
-      }
-
-      const chunks: Uint8Array[] = [];
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        chunks.push(value);
-        fileLoaded[idx] += value.byteLength;
-        flushProgress(false);
-      }
-
-      fileComplete[idx] = true;
-      flushProgress(false);
-
-      const blob = new Blob(chunks);
-      const fileName = fileInfo.folder ? `${fileInfo.folder}/${fileInfo.filename}` : fileInfo.filename;
-      return new File([blob], fileName);
-    };
-
-    try {
-      downloadStartRef.current = Date.now();
-      flushProgress(true);
-
-      // Run downloads with bounded concurrency
-      const results = new Array<File>(effectiveFiles.length);
-      let nextIdx = 0;
-
-      const worker = async () => {
-        while (nextIdx < effectiveFiles.length) {
-          if (abortController.signal.aborted) {
-            return;
-          }
-          const idx = nextIdx++;
-          results[idx] = await downloadOne(idx);
-        }
-      };
-
-      const workers = Array.from(
-        { length: Math.min(DOWNLOAD_CONCURRENCY, effectiveFiles.length) },
-        async () => { await worker(); },
-      );
-      await Promise.all(workers);
-
-      if (abortController.signal.aborted) {
-        return undefined;
-      }
-
-      flushProgress(true);
-      return results.filter((f): f is File => f != undefined);
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        return undefined;
-      }
-      setError(err instanceof Error ? err.message : String(err));
-      return undefined;
-    } finally {
-      setDownloadProgress(undefined);
-      downloadAbortRef.current = undefined;
-    }
-  }, [apiBase, effectiveFiles]);
-
   // Open the selected recordings straight from the server.
   //
   // The player reads them by byte range (HTTP Range), so playback starts at
-  // once instead of after every selected file has been transferred. Export
-  // still downloads, because writing a ZIP needs the bytes.
+  // once instead of after every selected file has been transferred.
   const onOpen = useCallback(() => {
     if (effectiveFiles.length === 0) {
       return;
@@ -1200,21 +1050,29 @@ export default function McapTimeline(): JSX.Element {
     dialogActions.dataSource.close();
   }, [apiBase, dialogActions.dataSource, effectiveFiles, selectSource]);
 
-  // Download files and export as ZIP to disk (client-side)
-  const onExport = useCallback(async () => {
-    const downloaded = await downloadFiles();
-    if (!downloaded || downloaded.length === 0) {
+  // Export the selected recordings as one zip, built and streamed by the
+  // server.
+  //
+  // Studio no longer holds these recordings: the player reads them by byte
+  // range. Zipping in the page would mean fetching every one of them first,
+  // which is the whole transfer that reading by range exists to avoid. The
+  // server has them on disk already, so it writes the archive and the browser
+  // owns the download, with its own progress and its own cancel.
+  const onExport = useCallback(() => {
+    if (effectiveFiles.length === 0) {
       return;
     }
-    await exportFilesAsZip(downloaded);
-  }, [downloadFiles]);
-
-  // Cancel download on unmount
-  useEffect(() => {
-    return () => { downloadAbortRef.current?.abort(); };
-  }, []);
-
-  const isDownloading = downloadProgress != undefined;
+    const q = new URLSearchParams();
+    for (const file of effectiveFiles) {
+      q.append("path", file.path);
+    }
+    const a = document.createElement("a");
+    a.href = `${apiBase}/api/mcap/archive?${q.toString()}`;
+    a.download = ""; // let the server's Content-Disposition name the archive
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }, [apiBase, effectiveFiles]);
 
   const customFooter = (
     <Stack
@@ -1244,13 +1102,13 @@ export default function McapTimeline(): JSX.Element {
           <ButtonGroup variant="contained">
             <Button
               onClick={onOpen}
-              disabled={isDownloading || effectiveFiles.length === 0}
+              disabled={effectiveFiles.length === 0}
             >
               Open{effectiveFiles.length > 0 ? ` (${effectiveFiles.length})` : ""}
             </Button>
             <Button
               size="small"
-              disabled={isDownloading || selectedFiles.length === 0}
+              disabled={selectedFiles.length === 0}
               onClick={(e) => { setMenuAnchorEl(e.currentTarget); }}
               sx={{ px: 0.5, minWidth: 0 }}
             >
@@ -1310,7 +1168,7 @@ export default function McapTimeline(): JSX.Element {
             </MenuItem>
           </Menu>
         </Stack>
-        {effectiveFiles.length > 0 && !isDownloading && (
+        {effectiveFiles.length > 0 && (
           <Link
             component="button"
             variant="caption"
@@ -2060,44 +1918,11 @@ export default function McapTimeline(): JSX.Element {
             </div>
           )}
 
-          {/* Download progress overlay */}
-          {downloadProgress && (
-            <div className={classes.downloadOverlay}>
-              <Typography variant="h5" fontWeight={600}>
-                Downloading recordings
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {downloadProgress.fileIndex} of {downloadProgress.totalFiles} files complete
-              </Typography>
-              <LinearProgress
-                variant="determinate"
-                value={
-                  downloadProgress.grandTotal > 0
-                    ? (downloadProgress.completedBytes / downloadProgress.grandTotal) * 100
-                    : 0
-                }
-                sx={{ width: "100%", maxWidth: 400, height: 8, borderRadius: 4 }}
-              />
-              <Typography variant="body2" color="text.secondary">
-                {formatFileSize(downloadProgress.completedBytes)}
-                {" / "}
-                {formatFileSize(downloadProgress.grandTotal)}
-                {(() => {
-                  const elapsed = (Date.now() - downloadStartRef.current) / 1000;
-                  if (elapsed < 0.5 || downloadProgress.completedBytes === 0) {
-                    return null;
-                  }
-                  const bytesPerSec = downloadProgress.completedBytes / elapsed;
-                  return ` · ${formatFileSize(bytesPerSec)}/s`;
-                })()}
-              </Typography>
-            </div>
-          )}
         </div>
         </div>}
 
         {/* Selection info */}
-        {effectiveFiles.length > 0 && !isDownloading && (
+        {effectiveFiles.length > 0 && (
           <Stack direction="row" alignItems="center" gap={2} className={classes.selectionInfo}>
             <Typography variant="body2" color="text.secondary">
               {effectiveFiles.length} file{effectiveFiles.length !== 1 ? "s" : ""} selected
@@ -2120,7 +1945,7 @@ export default function McapTimeline(): JSX.Element {
         )}
 
         {/* Duration control */}
-        {selCenter != undefined && !isDownloading && (
+        {selCenter != undefined && (
           <Stack direction="row" alignItems="center" gap={0.5} className={classes.selectionInfo}>
             <Typography variant="body2" color="text.secondary">
               Duration

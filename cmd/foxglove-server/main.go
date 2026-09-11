@@ -875,27 +875,10 @@ func main() {
 			return
 		}
 
-		relPath := strings.TrimPrefix(r.URL.Path, "/api/mcap/files/")
-		if relPath == "" {
-			http.Error(w, "Missing file path", http.StatusBadRequest)
-			return
-		}
-
-		// Support absolute paths by stripping the mcap directory prefix
-		relPath = strings.TrimPrefix(relPath, absPath)
-		relPath = strings.TrimPrefix(relPath, "/")
-
-		// Prevent directory traversal
-		cleanPath := filepath.Clean(relPath)
-		if strings.Contains(cleanPath, "..") {
-			http.Error(w, "Invalid path", http.StatusBadRequest)
-			return
-		}
-
-		fullPath := filepath.Join(absPath, cleanPath)
-
-		// Verify the file is within the mcap directory
-		if !strings.HasPrefix(fullPath, absPath) {
+		// Same resolution as the archive endpoint, so the confinement check
+		// exists once rather than twice (see archive.go).
+		fullPath, _, ok := resolveMcapPath(absPath, strings.TrimPrefix(r.URL.Path, "/api/mcap/files/"))
+		if !ok {
 			http.Error(w, "Invalid path", http.StatusBadRequest)
 			return
 		}
@@ -918,6 +901,9 @@ func main() {
 		// http.ServeContent handles Range requests, Content-Length, and Accept-Ranges automatically
 		http.ServeContent(w, r, stat.Name(), stat.ModTime(), f)
 	})
+
+	// API: download several recordings as one zip, built and streamed here
+	mux.HandleFunc("/api/mcap/archive", archiveHandler(absPath))
 
 	// API: list topics in an MCAP file
 	mux.HandleFunc("/api/mcap/topics/", func(w http.ResponseWriter, r *http.Request) {
