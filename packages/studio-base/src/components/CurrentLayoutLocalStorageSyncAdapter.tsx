@@ -17,6 +17,7 @@ import { LayoutData } from "@foxglove/studio-base/context/CurrentLayoutContext/a
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import { defaultLayout } from "@foxglove/studio-base/providers/CurrentLayoutProvider/defaultLayout";
 import { migratePanelsState } from "@foxglove/studio-base/services/migrateLayout";
+import { layoutLinkParams } from "@foxglove/studio-base/util/appURLState";
 
 function selectLayoutData(state: LayoutState) {
   return state.selectedLayout?.data;
@@ -28,13 +29,17 @@ const log = Log.getLogger(__filename);
  * Check whether the current URL provides a layout via ?layout= or ?layoutUrl=.
  * When true, this tab's layout is URL-driven and should NOT sync with localStorage.
  * This allows multiple browser tabs to each run their own layout independently.
+ *
+ * A parameter with an empty value provides nothing. Reading `?layout=` as a
+ * layout skipped the restore below and left the workspace with no layout, so no
+ * panels appeared and none could be added.
  */
 function hasUrlProvidedLayout(): boolean {
   if (typeof window === "undefined") {
     return false;
   }
-  const params = new URLSearchParams(window.location.search);
-  return params.has("layout") || params.has("layoutUrl");
+  const { layout, layoutUrl } = layoutLinkParams(window.location.search);
+  return layout != undefined || layoutUrl != undefined;
 }
 
 export function CurrentLayoutLocalStorageSyncAdapter(): JSX.Element {

@@ -5,6 +5,7 @@
 import { Time, toRFC3339String } from "@foxglove/rostime";
 import {
   AppURLState,
+  layoutLinkParams,
   updateAppURLState,
   parseAppURLState,
   parseLayoutParam,
@@ -177,5 +178,38 @@ describe("app state encoding", () => {
         )}`,
       );
     });
+  });
+});
+
+describe("layoutLinkParams", () => {
+  it("reads an inline layout and a layout URL", () => {
+    expect(layoutLinkParams("?layout=eyJ4IjoxfQ&layoutUrl=/l.json")).toEqual({
+      layout: "eyJ4IjoxfQ",
+      layoutUrl: "/l.json",
+    });
+  });
+
+  it("reads a missing parameter as absent", () => {
+    expect(layoutLinkParams("")).toEqual({ layout: undefined, layoutUrl: undefined });
+    expect(layoutLinkParams("?ds=mcap-server")).toEqual({
+      layout: undefined,
+      layoutUrl: undefined,
+    });
+  });
+
+  // edge-hub expands `layout={layout}` and leaves the value empty when no
+  // stored layout matches. URLSearchParams.has is true for that, which is what
+  // left the workspace with no layout and no way to add a panel.
+  it("reads an empty value as absent", () => {
+    expect(layoutLinkParams("?layout=")).toEqual({ layout: undefined, layoutUrl: undefined });
+    expect(layoutLinkParams("?layoutUrl=")).toEqual({ layout: undefined, layoutUrl: undefined });
+  });
+
+  it("reads an empty value as absent in a real hub link", () => {
+    const search =
+      "?ds=mcap-server&layout=&file=%2Fmnt%2Fdatalog%2Fzed2mqtt%2Fevents%2Fcam1%2Fcam1_event.mcap" +
+      "&time=2026-09-11T09%3A44%3A14.340712543Z";
+
+    expect(layoutLinkParams(search).layout).toBeUndefined();
   });
 });

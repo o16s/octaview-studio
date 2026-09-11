@@ -16,6 +16,35 @@ export type AppURLState = {
   layoutUrl?: string;
 };
 
+/** The layout parameters of a deep link, with an empty value read as absent. */
+export type LayoutLinkParams = {
+  /** An inline layout, base64 or raw JSON. */
+  layout?: string;
+  /** A URL to fetch the layout JSON from. */
+  layoutUrl?: string;
+};
+
+/**
+ * Read the layout parameters of a deep link.
+ *
+ * An empty value counts as absent. edge-hub expands `layout={layout}` in its
+ * link template and leaves the value empty when no stored layout matches the
+ * view or the file, so `?layout=` arrives on ordinary links.
+ *
+ * `URLSearchParams.has` is true for an empty value, so a caller that only asks
+ * whether the parameter is present concludes that the URL supplies a layout
+ * when it does not. One reader that decided it this way and one that tested the
+ * value left the workspace with no layout at all.
+ */
+export function layoutLinkParams(search: string): LayoutLinkParams {
+  const params = new URLSearchParams(search);
+  const nonEmpty = (name: string): string | undefined => {
+    const value = params.get(name);
+    return value == undefined || value === "" ? undefined : value;
+  };
+  return { layout: nonEmpty("layout"), layoutUrl: nonEmpty("layoutUrl") };
+}
+
 /**
  * Parse a layout parameter value (base64 or raw JSON) into LayoutData.
  * Returns undefined if parsing fails or the result is not a valid layout.

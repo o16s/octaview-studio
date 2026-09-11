@@ -71,7 +71,11 @@ import { usePerformanceMonitor } from "@foxglove/studio-base/hooks/usePerformanc
 import { PlayerPresence } from "@foxglove/studio-base/players/types";
 import { PanelStateContextProvider } from "@foxglove/studio-base/providers/PanelStateContextProvider";
 import WorkspaceContextProvider from "@foxglove/studio-base/providers/WorkspaceContextProvider";
-import { parseAppURLState, parseLayoutParam } from "@foxglove/studio-base/util/appURLState";
+import {
+  layoutLinkParams,
+  parseAppURLState,
+  parseLayoutParam,
+} from "@foxglove/studio-base/util/appURLState";
 import { extractFilesFromZip } from "@foxglove/studio-base/util/extractZip";
 import { parseFileDeepLink } from "@foxglove/studio-base/util/fileDeepLink";
 import { parseLayoutFile } from "@foxglove/studio-base/util/parseLayoutFile";
@@ -537,11 +541,12 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
     if (typeof window === "undefined") {
       return;
     }
-    const params = new URLSearchParams(window.location.search);
+    // Same reader as CurrentLayoutLocalStorageSyncAdapter, so the two agree on
+    // what counts as a layout in the URL.
+    const { layout: layoutParam, layoutUrl } = layoutLinkParams(window.location.search);
 
     // ?layout= takes inline base64 or JSON
-    const layoutParam = params.get("layout");
-    if (layoutParam) {
+    if (layoutParam != undefined) {
       const layoutData = parseLayoutParam(layoutParam);
       if (layoutData) {
         log.debug("Applying layout from URL param");
@@ -554,8 +559,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
     }
 
     // ?layoutUrl= fetches layout JSON from a URL
-    const layoutUrl = params.get("layoutUrl");
-    if (!layoutUrl) {
+    if (layoutUrl == undefined) {
       return;
     }
 
