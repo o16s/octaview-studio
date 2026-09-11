@@ -72,7 +72,9 @@ class McapServerDataSourceFactory implements IDataSourceFactory {
       }
     }
 
-    // Fallback: URL-based loading (for backward compatibility)
+    // URL-based loading. The player reads these by byte range (HTTP Range) and
+    // never holds a whole file, so there is nothing here for "Export recordings
+    // as ZIP" to hand out.
     const urlsParam = args.params?.urls;
     if (!urlsParam) {
       return;
@@ -91,6 +93,11 @@ class McapServerDataSourceFactory implements IDataSourceFactory {
     const name = urls.length === 1
       ? decodeURIComponent(urls[0]!.split("/").pop() ?? urls[0]!)
       : `${urls.length} files`;
+
+    // Forget the files of the previous open. Leaving them would keep the export
+    // menu item enabled and make it write out a different recording from the
+    // one on screen.
+    currentOpenFiles = undefined;
 
     const source = new WorkerIterableSource({
       initWorker,
