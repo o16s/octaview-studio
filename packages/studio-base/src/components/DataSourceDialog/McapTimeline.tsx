@@ -36,7 +36,11 @@ import { makeStyles } from "tss-react/mui";
 import Stack from "@foxglove/studio-base/components/Stack";
 import { usePlayerSelection } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import { useWorkspaceActions } from "@foxglove/studio-base/context/Workspace/useWorkspaceActions";
-import { getApiBase } from "@foxglove/studio-base/util/serverConfig";
+import {
+  getApiBase,
+  mcapArchiveUrl,
+  mcapFileUrl,
+} from "@foxglove/studio-base/util/serverConfig";
 
 import View from "./View";
 
@@ -1040,15 +1044,13 @@ export default function McapTimeline(): JSX.Element {
     if (effectiveFiles.length === 0) {
       return;
     }
-    const urls = effectiveFiles.map(
-      (file) => `${apiBase}/api/mcap/files/${encodeURIComponent(file.path)}`,
-    );
+    const urls = effectiveFiles.map((file) => mcapFileUrl(file.path));
     selectSource("mcap-server", {
       type: "connection",
       params: { urls: JSON.stringify(urls) },
     });
     dialogActions.dataSource.close();
-  }, [apiBase, dialogActions.dataSource, effectiveFiles, selectSource]);
+  }, [dialogActions.dataSource, effectiveFiles, selectSource]);
 
   // Export the selected recordings as one zip, built and streamed by the
   // server.
@@ -1062,17 +1064,13 @@ export default function McapTimeline(): JSX.Element {
     if (effectiveFiles.length === 0) {
       return;
     }
-    const q = new URLSearchParams();
-    for (const file of effectiveFiles) {
-      q.append("path", file.path);
-    }
     const a = document.createElement("a");
-    a.href = `${apiBase}/api/mcap/archive?${q.toString()}`;
+    a.href = mcapArchiveUrl(effectiveFiles.map((file) => file.path));
     a.download = ""; // let the server's Content-Disposition name the archive
     document.body.appendChild(a);
     a.click();
     a.remove();
-  }, [apiBase, effectiveFiles]);
+  }, [effectiveFiles]);
 
   const customFooter = (
     <Stack

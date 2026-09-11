@@ -11,7 +11,7 @@ import { DataSourceArgs } from "@foxglove/studio-base/context/PlayerSelectionCon
 import { storeDownloadedFiles } from "@foxglove/studio-base/dataSources/McapServerDataSourceFactory";
 import { RosDatatypes } from "@foxglove/studio-base/types/RosDatatypes";
 import { getPanelIdForType, PANEL_TITLE_CONFIG_KEY } from "@foxglove/studio-base/util/layout";
-import { apiUrl } from "@foxglove/studio-base/util/serverConfig";
+import { apiUrl, mcapFileUrl } from "@foxglove/studio-base/util/serverConfig";
 
 export type TopicInfo = {
   name: string;
@@ -414,7 +414,7 @@ export function createToolExecutor(
 
       const downloadedFiles: File[] = [];
       for (const filePath of filePaths) {
-        const url = apiUrl(`/api/mcap/files/${encodeURIComponent(filePath)}`);
+        const url = mcapFileUrl(filePath);
         const response = await fetchFn(url);
         if (!response.ok) {
           return `Error downloading ${filePath}: ${response.status} ${response.statusText}`;

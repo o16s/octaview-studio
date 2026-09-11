@@ -4,8 +4,10 @@
 
 import { parseFileDeepLink } from "./fileDeepLink";
 
-const atRoot = (path: string) => path;
-const behindProxy = (path: string) => `/svc/octaview-studio${path}`;
+// Stand-ins for mcapFileUrl at the root and behind edge-hub's reverse proxy.
+const atRoot = (path: string) => `/api/mcap/files/${encodeURIComponent(path)}`;
+const behindProxy = (path: string) =>
+  `/svc/octaview-studio/api/mcap/files/${encodeURIComponent(path)}`;
 
 describe("parseFileDeepLink", () => {
   it("returns undefined when the link names no file", () => {

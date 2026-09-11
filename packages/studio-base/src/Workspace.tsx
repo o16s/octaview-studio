@@ -75,7 +75,7 @@ import { parseAppURLState, parseLayoutParam } from "@foxglove/studio-base/util/a
 import { extractFilesFromZip } from "@foxglove/studio-base/util/extractZip";
 import { parseFileDeepLink } from "@foxglove/studio-base/util/fileDeepLink";
 import { parseLayoutFile } from "@foxglove/studio-base/util/parseLayoutFile";
-import { apiUrl, isServerMode } from "@foxglove/studio-base/util/serverConfig";
+import { isServerMode, mcapFileUrl } from "@foxglove/studio-base/util/serverConfig";
 
 import { useWorkspaceActions } from "./context/Workspace/useWorkspaceActions";
 
@@ -624,7 +624,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
     if (!isServerMode()) {
       return;
     }
-    const link = parseFileDeepLink(window.location.search, apiUrl);
+    const link = parseFileDeepLink(window.location.search, mcapFileUrl);
     if (!link) {
       return;
     }

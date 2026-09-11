@@ -20,13 +20,12 @@ export type FileDeepLink = {
  * whole, encoded as one segment.
  *
  * @param search The query string, including the leading "?".
- * @param resolveApiUrl Puts the server's base path in front of a route. Studio
- * runs at the root as a standalone service and under a prefix behind edge-hub's
- * reverse proxy, so a route must never be used unresolved.
+ * @param toFileUrl Builds the route that serves one recording, normally
+ * {@link mcapFileUrl}. Passed in so this stays a pure function.
  */
 export function parseFileDeepLink(
   search: string,
-  resolveApiUrl: (path: string) => string,
+  toFileUrl: (path: string) => string,
 ): FileDeepLink | undefined {
   const filePath = new URLSearchParams(search).get("file");
   if (filePath == undefined || filePath === "") {
@@ -41,6 +40,6 @@ export function parseFileDeepLink(
   return {
     filePath,
     displayName,
-    fileUrl: resolveApiUrl(`/api/mcap/files/${encodeURIComponent(filePath)}`),
+    fileUrl: toFileUrl(filePath),
   };
 }

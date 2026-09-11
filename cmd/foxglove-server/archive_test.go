@@ -282,6 +282,9 @@ func TestArchiveHandlerHeadSendsNoBody(t *testing.T) {
 }
 
 func TestArchiveHandlerWithoutRecordingsDirectory(t *testing.T) {
+	// main.go only registers the handler when --mcap-path is set, so this is
+	// defence rather than a path anyone reaches. resolveMcapPath refuses an
+	// empty root, so nothing plans and the request is a miss.
 	rec := httptest.NewRecorder()
 	archiveHandler("")(rec, httptest.NewRequest(http.MethodGet, "/api/mcap/archive?path=a.mcap", nil))
 

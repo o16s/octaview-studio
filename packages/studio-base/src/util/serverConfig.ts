@@ -45,3 +45,26 @@ export function hasDownloads(): boolean {
 export function apiUrl(path: string): string {
   return `${getApiBase()}${path}`;
 }
+
+/**
+ * The route that serves one recording. The player reads it by byte range.
+ *
+ * The path goes through as one encoded segment, so an absolute host path from
+ * edge-hub's Files page survives intact.
+ */
+export function mcapFileUrl(path: string): string {
+  return apiUrl(`/api/mcap/files/${encodeURIComponent(path)}`);
+}
+
+/**
+ * The route that serves several recordings as one zip, built and streamed by
+ * the server. Give the browser this URL rather than fetching the recordings and
+ * zipping them here: the page does not hold them any more.
+ */
+export function mcapArchiveUrl(paths: readonly string[]): string {
+  const query = new URLSearchParams();
+  for (const path of paths) {
+    query.append("path", path);
+  }
+  return apiUrl(`/api/mcap/archive?${query.toString()}`);
+}

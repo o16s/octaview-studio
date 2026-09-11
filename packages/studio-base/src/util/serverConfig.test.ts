@@ -2,7 +2,15 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import { apiUrl, getApiBase, getServerConfig, hasDownloads, isServerMode } from "./serverConfig";
+import {
+  apiUrl,
+  getApiBase,
+  getServerConfig,
+  hasDownloads,
+  isServerMode,
+  mcapArchiveUrl,
+  mcapFileUrl,
+} from "./serverConfig";
 
 type Mutable = Record<string, unknown>;
 
@@ -60,6 +68,33 @@ describe("serverConfig", () => {
     it("works with no injected config at all", () => {
       setServerConfig(undefined);
       expect(apiUrl("/api/downloads")).toBe("/api/downloads");
+    });
+  });
+
+  describe("recording routes", () => {
+    it("sends the whole path as one encoded segment", () => {
+      setServerConfig({});
+      expect(mcapFileUrl("/mnt/datalog/svc/a b.mcap")).toBe(
+        "/api/mcap/files/%2Fmnt%2Fdatalog%2Fsvc%2Fa%20b.mcap",
+      );
+    });
+
+    it("puts the server base path in front of both routes", () => {
+      setServerConfig({ apiBase: "/svc/octaview-studio" });
+      expect(mcapFileUrl("a.mcap")).toBe("/svc/octaview-studio/api/mcap/files/a.mcap");
+      expect(mcapArchiveUrl(["a.mcap"])).toBe("/svc/octaview-studio/api/mcap/archive?path=a.mcap");
+    });
+
+    it("names every recording of an archive separately", () => {
+      setServerConfig({});
+      expect(mcapArchiveUrl(["svc/a.mcap", "other/b.mcap"])).toBe(
+        "/api/mcap/archive?path=svc%2Fa.mcap&path=other%2Fb.mcap",
+      );
+    });
+
+    it("builds an archive URL for an empty selection without a query", () => {
+      setServerConfig({});
+      expect(mcapArchiveUrl([])).toBe("/api/mcap/archive?");
     });
   });
 });

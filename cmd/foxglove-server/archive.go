@@ -223,11 +223,6 @@ func archiveHandler(root string) http.HandlerFunc {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if root == "" {
-			http.Error(w, "No recordings directory configured", http.StatusNotFound)
-			return
-		}
-
 		paths := r.URL.Query()["path"]
 		if len(paths) == 0 {
 			http.Error(w, "Missing path parameter", http.StatusBadRequest)
