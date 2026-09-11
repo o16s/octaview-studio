@@ -22,12 +22,21 @@ describe("cacheSizeForSourceCount", () => {
     expect(cacheSizeForSourceCount(4)).toBe(DEFAULT_CACHE_SIZE_IN_BYTES / 4);
   });
 
-  it("keeps the total at the budget for any count", () => {
-    for (const count of [2, 3, 5, 8, 12]) {
+  it("keeps the total at the budget until the floor applies", () => {
+    // 200 MiB over 12 recordings is 16.67 MiB, the last share above the floor.
+    for (const count of [2, 3, 5, 8, 11, 12]) {
       expect(cacheSizeForSourceCount(count) * count).toBeLessThanOrEqual(
         DEFAULT_CACHE_SIZE_IN_BYTES,
       );
     }
+  });
+
+  it("lets the total pass the budget rather than go under the floor", () => {
+    // From 13 recordings the even share would be under 16 MiB, so the floor
+    // wins and the total grows with the count. A read larger than its cache
+    // makes CachedFilelike throw, which is worse than holding more memory.
+    expect(cacheSizeForSourceCount(13) * 13).toBeGreaterThan(DEFAULT_CACHE_SIZE_IN_BYTES);
+    expect(cacheSizeForSourceCount(100)).toBe(MIN_CACHE_SIZE_IN_BYTES);
   });
 
   it("stops sharing at the floor, because a read larger than the cache throws", () => {
