@@ -28,4 +28,14 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     set: (key, value) => ipcRenderer.invoke("secure-storage:set", key, value),
     delete: (key) => ipcRenderer.invoke("secure-storage:delete", key),
   },
+
+  // Recordings the OS hands us because this app is registered for `.mcap`.
+  // takeInitialOpenFile claims one queued before the app finished loading (the
+  // launch case); onOpenFile receives files opened while it is already running.
+  takeInitialOpenFile: () => ipcRenderer.invoke("desktop:take-open-file"),
+  onOpenFile: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("open-mcap-file", handler);
+    return () => ipcRenderer.removeListener("open-mcap-file", handler);
+  },
 });

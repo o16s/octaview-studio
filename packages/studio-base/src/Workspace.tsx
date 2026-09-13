@@ -76,6 +76,11 @@ import {
   parseAppURLState,
   parseLayoutParam,
 } from "@foxglove/studio-base/util/appURLState";
+import {
+  DesktopFileBridge,
+  DesktopOpenFilePayload,
+  desktopFileSourceSelection,
+} from "@foxglove/studio-base/util/desktopFileSource";
 import { extractFilesFromZip } from "@foxglove/studio-base/util/extractZip";
 import { parseFileDeepLink } from "@foxglove/studio-base/util/fileDeepLink";
 import { parseLayoutFile } from "@foxglove/studio-base/util/parseLayoutFile";
@@ -648,6 +653,33 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
       type: "connection",
       params: { urls: JSON.stringify([link.fileUrl]) },
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Open a recording the desktop shell hands us, e.g. after the user
+  // double-clicked an `.mcap` file this app is registered for. The shell serves
+  // it over its own `mcap-local://` protocol, which supports byte ranges, so we
+  // reuse the URL-based player path rather than reading the whole file.
+  useEffect(() => {
+    const bridge = (globalThis as { desktopBridge?: DesktopFileBridge }).desktopBridge;
+    if (!bridge?.onOpenFile) {
+      return;
+    }
+
+    const open = (payload: DesktopOpenFilePayload | undefined) => {
+      const selection = desktopFileSourceSelection(payload);
+      if (!selection) {
+        return;
+      }
+      setOpeningFile(payload?.name);
+      selectSource(selection.sourceId, selection.args);
+    };
+
+    // A file the OS queued before the renderer subscribed (the launch case).
+    void bridge.takeInitialOpenFile?.().then(open);
+
+    // Files opened while the app is already running (a second double-click).
+    return bridge.onOpenFile(open);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

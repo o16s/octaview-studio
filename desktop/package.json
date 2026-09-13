@@ -1,6 +1,6 @@
 {
   "name": "octaview-studio-desktop",
-  "version": "1.93.2",
+  "version": "1.94.0",
   "description": "octaview Studio desktop application",
   "main": "main.js",
   "private": true,
@@ -38,6 +38,17 @@
         "filter": [
           "**/*"
         ]
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "mcap",
+        "name": "MCAP recording",
+        "description": "MCAP recording",
+        "mimeType": "application/octet-stream",
+        "role": "Viewer",
+        "rank": "Owner",
+        "icon": "build/mcap-icon"
       }
     ],
     "afterSign": "scripts/notarize.js",
