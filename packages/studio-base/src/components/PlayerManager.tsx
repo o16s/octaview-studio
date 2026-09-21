@@ -23,6 +23,7 @@ import { useAnalytics } from "@foxglove/studio-base/context/AnalyticsContext";
 import { useAppContext } from "@foxglove/studio-base/context/AppContext";
 import { ExtensionCatalogContext } from "@foxglove/studio-base/context/ExtensionCatalogContext";
 import PlayerSelectionContext, {
+  CurrentSourceHandle,
   DataSourceArgs,
   IDataSourceFactory,
   PlayerSelection,
@@ -36,6 +37,34 @@ import {
 import { Player } from "@foxglove/studio-base/players/types";
 
 const log = Logger.getLogger(__filename);
+
+/**
+ * The recording URL(s) a connection source was opened with. `urls` is a JSON
+ * array (mcap-server); `url` is a single URL (remote-file). Returns [] when the
+ * params carry no readable URL (e.g. a live connection or a downloadId).
+ */
+function parseSourceUrls(params: Record<string, string | undefined> | undefined): string[] {
+  if (!params) {
+    return [];
+  }
+  if (typeof params.urls === "string") {
+    try {
+      const parsed = JSON.parse(params.urls) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((entry): entry is string => typeof entry === "string");
+      }
+      // A bare JSON string ("\"x.mcap\"") parses to a string — use it unwrapped
+      // rather than passing the quoted form through.
+      if (typeof parsed === "string") {
+        return [parsed];
+      }
+    } catch {
+      // Not JSON — treat it as a single literal URL below.
+    }
+    return [params.urls];
+  }
+  return typeof params.url === "string" ? [params.url] : [];
+}
 
 type PlayerManagerProps = {
   playerSources: readonly IDataSourceFactory[];
@@ -97,6 +126,10 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
 
   const [selectedSource, setSelectedSource] = useState<IDataSourceFactory | undefined>();
 
+  // A re-readable handle to the current source, for panels that read the
+  // recording directly (see PlayerSelection.currentSource).
+  const [currentSource, setCurrentSource] = useState<CurrentSourceHandle | undefined>();
+
   const selectSource = useCallback(
     async (sourceId: string, args?: DataSourceArgs) => {
       log.debug(`Select Source: ${sourceId}`);
@@ -120,12 +153,14 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
         });
 
         setBasePlayer(newPlayer);
+        setCurrentSource(undefined);
         return;
       }
 
       if (!args) {
         enqueueSnackbar("Unable to initialize player: no args", { variant: "error" });
         setSelectedSource(undefined);
+        setCurrentSource(undefined);
         return;
       }
 
@@ -137,6 +172,13 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
               params: args.params,
             });
             setBasePlayer(newPlayer);
+
+            // Expose the source URL(s) so panels can re-read the recording. A
+            // `urls` param (mcap-server) is a JSON array; `url` is a single URL.
+            const urls = parseSourceUrls(args.params);
+            setCurrentSource(
+              urls.length > 0 ? { kind: "urls", sourceId: foundSource.id, urls } : undefined,
+            );
 
             if (args.params?.url) {
               addRecent({
@@ -174,6 +216,8 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
               });
 
               setBasePlayer(newPlayer);
+              // Keep the (lazy, on-disk) File references so panels can re-read.
+              setCurrentSource({ kind: "files", sourceId: foundSource.id, files: fileList });
               return;
             } else if (handle) {
               const permission = await handle.queryPermission({ mode: "read" });
@@ -199,6 +243,7 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
               });
 
               setBasePlayer(newPlayer);
+              setCurrentSource({ kind: "files", sourceId: foundSource.id, files: [file] });
               addRecent({
                 type: "file",
                 title: handle.name,
@@ -211,8 +256,13 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
           }
         }
 
+        // Reached only when a file source had neither files nor a handle.
+        setCurrentSource(undefined);
         enqueueSnackbar("Unable to initialize player", { variant: "error" });
       } catch (error) {
+        // Initialization failed (e.g. permission denied); don't leave a stale
+        // handle pointing at the previous recording.
+        setCurrentSource(undefined);
         enqueueSnackbar((error as Error).message, { variant: "error" });
       }
     },
@@ -234,13 +284,17 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
     });
   }, [recents]);
 
-  const value: PlayerSelection = {
-    selectSource,
-    selectRecent,
-    selectedSource,
-    availableSources: playerSources,
-    recentSources,
-  };
+  const value: PlayerSelection = useMemo(
+    () => ({
+      selectSource,
+      selectRecent,
+      selectedSource,
+      currentSource,
+      availableSources: playerSources,
+      recentSources,
+    }),
+    [selectSource, selectRecent, selectedSource, currentSource, playerSources, recentSources],
+  );
 
   return (
     <>

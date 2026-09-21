@@ -93,6 +93,17 @@ type ConnectionDataSourceArgs = {
 export type DataSourceArgs = FileDataSourceArgs | ConnectionDataSourceArgs;
 
 /**
+ * A re-readable handle to the currently-loaded source, for panels (e.g. Sheet)
+ * that read the recording directly rather than through the player's stream.
+ * Only set for sources that expose one: file sources keep the (lazy, on-disk)
+ * `File` references; url sources keep their URLs. `undefined` for live
+ * connections and sample sources.
+ */
+export type CurrentSourceHandle =
+  | { kind: "files"; sourceId: string; files: readonly File[] }
+  | { kind: "urls"; sourceId: string; urls: readonly string[] };
+
+/**
  * PlayerSelectionContext exposes the available data sources and a function to set the current data source
  */
 export interface PlayerSelection {
@@ -101,6 +112,9 @@ export interface PlayerSelection {
 
   /** Currently selected data source */
   selectedSource?: IDataSourceFactory;
+
+  /** A re-readable handle to the current source, when it exposes one. */
+  currentSource?: CurrentSourceHandle;
 
   /** List of available data sources */
   availableSources: readonly IDataSourceFactory[];
