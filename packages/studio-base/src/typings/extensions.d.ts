@@ -12,6 +12,9 @@ declare module "*.svg" {
   export default IconComponent;
 }
 
+// Side-effect CSS imports (bundled by webpack's css-loader); no bindings.
+declare module "*.css";
+
 declare module "*.bag" {
   const content: string;
   export default content;

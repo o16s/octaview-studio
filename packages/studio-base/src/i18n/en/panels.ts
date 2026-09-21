@@ -36,6 +36,8 @@ export const panels = {
   stateTransitionsDescription: "Track when values change over time.",
   tab: "Tab",
   tabDescription: "Group panels together in a tabbed interface.",
+  sheet: "Sheet",
+  sheetDescription: "Open every topic in a recording as a spreadsheet.",
   table: "Table",
   tableDescription: "Display topic messages in a tabular format.",
   teleop: "Teleop",

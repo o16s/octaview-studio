@@ -16,6 +16,7 @@ import parametersThumbnail from "./Parameters/thumbnail.png";
 import plotThumbnail from "./Plot/thumbnail.png";
 import publishThumbnail from "./Publish/thumbnail.png";
 import rawMessagesThumbnail from "./RawMessages/thumbnail.png";
+import sheetThumbnail from "./Sheet/thumbnail.png";
 import stateTransitionsThumbnail from "./StateTransitions/thumbnail.png";
 import tabThumbnail from "./Tab/thumbnail.png";
 import tableThumbnail from "./Table/thumbnail.png";
@@ -142,6 +143,13 @@ export const getBuiltin: (t: TFunction<"panels">) => PanelInfo[] = (t) => [
     thumbnail: tableThumbnail,
     module: async () => await import("./Table"),
     hasCustomToolbar: true,
+  },
+  {
+    title: t("sheet"),
+    type: "Sheet",
+    description: t("sheetDescription"),
+    thumbnail: sheetThumbnail,
+    module: async () => await import("./Sheet"),
   },
   {
     title: t("topicGraph"),

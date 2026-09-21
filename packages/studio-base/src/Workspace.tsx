@@ -47,6 +47,7 @@ import { SyncAdapters } from "@foxglove/studio-base/components/SyncAdapters";
 import { TopicList } from "@foxglove/studio-base/components/TopicList";
 import VariablesList from "@foxglove/studio-base/components/VariablesList";
 import { WorkspaceDialogs } from "@foxglove/studio-base/components/WorkspaceDialogs";
+import { LOCAL_STORAGE_STUDIO_LAYOUT_KEY } from "@foxglove/studio-base/constants/localStorageKeys";
 import { useAppContext } from "@foxglove/studio-base/context/AppContext";
 import { useCurrentUser } from "@foxglove/studio-base/context/BaseUserContext";
 import {
@@ -68,6 +69,10 @@ import { useConfirm } from "@foxglove/studio-base/hooks/useConfirm";
 import { useDefaultWebLaunchPreference } from "@foxglove/studio-base/hooks/useDefaultWebLaunchPreference";
 import useElectronFilesToOpen from "@foxglove/studio-base/hooks/useElectronFilesToOpen";
 import { usePerformanceMonitor } from "@foxglove/studio-base/hooks/usePerformanceMonitor";
+import {
+  isPristineDefaultLayout,
+  makeSingleSheetLayout,
+} from "@foxglove/studio-base/panels/Sheet/layout";
 import { PlayerPresence } from "@foxglove/studio-base/players/types";
 import { PanelStateContextProvider } from "@foxglove/studio-base/providers/PanelStateContextProvider";
 import WorkspaceContextProvider from "@foxglove/studio-base/providers/WorkspaceContextProvider";
@@ -631,6 +636,31 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Opening an MCAP lands it in a single full-window Sheet panel — but only when
+  // the user hasn't asked for a layout and hasn't built their own. An explicit
+  // ?layout=/?layoutUrl= always wins, and a layout customized in a prior session
+  // (read straight from localStorage, since the layout state hasn't loaded yet
+  // when this runs at mount) is preserved rather than clobbered.
+  const applyDefaultSheetLayout = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const { layout, layoutUrl } = layoutLinkParams(window.location.search);
+    if (layout != undefined || layoutUrl != undefined) {
+      return;
+    }
+    let savedLayout: LayoutData | undefined;
+    try {
+      const serialized = localStorage.getItem(LOCAL_STORAGE_STUDIO_LAYOUT_KEY);
+      savedLayout = serialized != undefined ? (JSON.parse(serialized) as LayoutData) : undefined;
+    } catch {
+      savedLayout = undefined;
+    }
+    if (isPristineDefaultLayout(savedLayout)) {
+      setCurrentLayout({ data: makeSingleSheetLayout() });
+    }
+  }, [setCurrentLayout]);
+
   // Open a specific file directly via ?file= URL param.
   //
   // The file is handed to the player as a remote URL, not downloaded first. The
@@ -648,6 +678,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
     if (!link) {
       return;
     }
+    applyDefaultSheetLayout();
     setOpeningFile(link.displayName);
     selectSource("mcap-server", {
       type: "connection",
@@ -666,20 +697,32 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
       return;
     }
 
-    const open = (payload: DesktopOpenFilePayload | undefined) => {
+    const open = (
+      payload: DesktopOpenFilePayload | undefined,
+      { defaultLayout = false }: { defaultLayout?: boolean } = {},
+    ) => {
       const selection = desktopFileSourceSelection(payload);
       if (!selection) {
         return;
+      }
+      // Only the launch open (no layout in play yet) drops into a Sheet; a
+      // second open while the app is running keeps the user's current layout.
+      if (defaultLayout) {
+        applyDefaultSheetLayout();
       }
       setOpeningFile(payload?.name);
       selectSource(selection.sourceId, selection.args);
     };
 
     // A file the OS queued before the renderer subscribed (the launch case).
-    void bridge.takeInitialOpenFile?.().then(open);
+    void bridge.takeInitialOpenFile?.().then((payload) => {
+      open(payload, { defaultLayout: true });
+    });
 
     // Files opened while the app is already running (a second double-click).
-    return bridge.onOpenFile(open);
+    return bridge.onOpenFile((payload) => {
+      open(payload);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
