@@ -61,7 +61,7 @@ jobs:
       - run: corepack enable yarn
 
       - name: Restore cache
-        uses: actions/cache@v4.0.0
+        uses: actions/cache@v4
         with:
           path: |
             .yarn/cache
@@ -91,7 +91,7 @@ jobs:
       - run: corepack enable yarn
 
       - name: Restore cache
-        uses: actions/cache@v4.0.0
+        uses: actions/cache@v4
         with:
           path: |
             .yarn/cache
@@ -136,7 +136,7 @@ jobs:
       - run: corepack enable yarn
 
       - name: Restore cache
-        uses: actions/cache@v4.0.0
+        uses: actions/cache@v4
         with:
           path: |
             .yarn/cache
