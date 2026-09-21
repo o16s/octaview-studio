@@ -73,14 +73,19 @@ type McapFieldInfo struct {
 // openIndexDB opens (or creates) a SQLite database at dbPath and ensures
 // the mcap_index table exists. The returned *sql.DB is safe for concurrent use.
 func openIndexDB(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	// Pass the PRAGMAs in the DSN so modernc.org/sqlite runs them on *every*
+	// connection it opens. busy_timeout is per-connection and not persisted in
+	// the file (unlike journal_mode), so setting it once via db.Exec only
+	// configured whichever pooled connection happened to run it — under
+	// concurrency database/sql opens more connections with the default timeout
+	// of 0, and the first write collision fails instantly with SQLITE_BUSY
+	// instead of retrying. WAL allows concurrent readers + a writer; busy_timeout
+	// makes writers wait up to 5s for the write lock rather than failing.
+	dsn := dbPath + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open index db: %w", err)
 	}
-	// WAL mode allows concurrent readers + writer without SQLITE_BUSY.
-	// busy_timeout makes writers retry for up to 5s instead of failing immediately.
-	db.Exec("PRAGMA journal_mode=WAL")
-	db.Exec("PRAGMA busy_timeout=5000")
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS mcap_index (
 		path       TEXT PRIMARY KEY,
 		mod_time   TEXT NOT NULL,
@@ -1062,6 +1067,10 @@ func main() {
 
 		enc := json.NewEncoder(w)
 
+		// Stop touching the disk when the client goes away (tab closed / request
+		// abandoned) instead of walking the whole tree anyway.
+		done := r.Context().Done()
+
 		// Phase 1: quick walk to count .mcap files
 		type mcapEntry struct {
 			path    string
@@ -1070,6 +1079,11 @@ func main() {
 		}
 		var entries []mcapEntry
 		filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
+			select {
+			case <-done:
+				return filepath.SkipAll
+			default:
+			}
 			if err != nil {
 				return nil
 			}
@@ -1085,12 +1099,25 @@ func main() {
 			return nil
 		})
 
+		if r.Context().Err() != nil {
+			return
+		}
+
 		enc.Encode(map[string]int{"total": len(entries)})
 		flusher.Flush()
 
 		// Phase 2: index each file and stream results
 		seenPaths := make(map[string]struct{}, len(entries))
 		for _, entry := range entries {
+			// Bail out if the client disconnected. Returning here also skips the
+			// Phase 3 stale-cleanup below — which is required: seenPaths is only
+			// partial on an aborted walk, so running cleanup would delete cache
+			// rows for files not yet visited.
+			select {
+			case <-done:
+				return
+			default:
+			}
 			seenPaths[entry.relPath] = struct{}{}
 			modTimeStr := entry.info.ModTime().UTC().Format(time.RFC3339)
 
