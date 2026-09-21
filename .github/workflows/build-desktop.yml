@@ -10,10 +10,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-13
             build-cmd: build:mac
             artifact-name: desktop-mac-arm64
-          - os: macos-latest
+          - os: macos-13
             build-cmd: build:mac-x64
             artifact-name: desktop-mac-x64
           - os: windows-latest
