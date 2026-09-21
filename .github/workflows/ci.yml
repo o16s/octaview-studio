@@ -5,6 +5,12 @@ on:
     branches: [main, release/*]
   pull_request:
 
+# `packages: read` lets `yarn install` authenticate to GitHub Packages for
+# @o16s/* dependencies (see .yarnrc.yml). `contents: read` keeps checkout working.
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -64,6 +70,8 @@ jobs:
           restore-keys: v5-${{ runner.os }}-yarn-
 
       - run: yarn install --immutable
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - run: ${{ matrix.config.command }}
 
@@ -92,6 +100,8 @@ jobs:
           restore-keys: v5-${{ runner.os }}-yarn-
 
       - run: yarn install --immutable
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - run: yarn workspace @foxglove/studio-base run storybook:build
 
@@ -135,6 +145,8 @@ jobs:
           restore-keys: v5-${{ runner.os }}-yarn-
 
       - run: yarn install --immutable
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: test:web-integration
         if: matrix.os == 'ubuntu-20.04'

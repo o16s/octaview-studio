@@ -47,6 +47,9 @@ jobs:
           # yarn runs in immutable mode "by default" in CI -- turning this off requires an
           # undocumented env var
           YARN_ENABLE_IMMUTABLE_INSTALLS: false
+          # Authenticate to GitHub Packages for @o16s/* deps. The default token is
+          # restricted in dependabot runs, so reuse the bot PAT used for checkout.
+          GITHUB_TOKEN: ${{ secrets.FOXGLOVEBOT_GITHUB_TOKEN }}
 
       - run: yarn dedupe
 

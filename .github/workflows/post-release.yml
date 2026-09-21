@@ -47,6 +47,10 @@ jobs:
     name: Publish to NPM
     runs-on: ubuntu-20.04
 
+    permissions:
+      contents: read
+      packages: read # authenticate to GitHub Packages for @o16s/* deps
+
     steps:
       - name: Checkout ${{ github.event.release.tag_name || github.event.inputs.tag_name }}
         uses: actions/checkout@v4.1.1
@@ -61,6 +65,8 @@ jobs:
       - run: corepack enable yarn
 
       - run: yarn install --immutable
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - run: npm publish ./packages/studio
         env:

@@ -2560,6 +2560,7 @@ __metadata:
     "@mlc-ai/web-llm": ^0.2
     "@mui/icons-material": 5.15.5
     "@mui/material": 5.15.6
+    "@o16s/mcap-sheets": 0.2.0
     "@popperjs/core": ^2.11.8
     "@protobufjs/base64": 1.1.2
     "@storybook/addon-actions": 7.6.10
@@ -3248,6 +3249,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@mcap/browser@npm:^1.1.0":
+  version: 1.1.0
+  resolution: "@mcap/browser@npm:1.1.0"
+  dependencies:
+    tslib: ^2.5.0
+  checksum: c55de159d85f5c2769c23d30590cbe7b3f927d47b58891708c038a29f6a0c18f366d9287aca7dcd89347f87c0060d2f5a02cc7ae4acd91e29dc00ac85bef8253
+  languageName: node
+  linkType: hard
+
 "@mcap/core@npm:2.0.2":
   version: 2.0.2
   resolution: "@mcap/core@npm:2.0.2"
@@ -3256,6 +3266,17 @@ __metadata:
     heap-js: ^2.2.0
     tslib: ^2.5.0
   checksum: 8c1f44edbcc9abf98eca6ca630c1012dac395892c8d368843045f7bcd3660cd2f9456211a13891437ef7055fa71b77863ca277a05b06f4b20f9c92eead89adbd
+  languageName: node
+  linkType: hard
+
+"@mcap/core@npm:^2.2.2":
+  version: 2.2.2
+  resolution: "@mcap/core@npm:2.2.2"
+  dependencies:
+    "@foxglove/crc": ^0.0.3
+    heap-js: ^2.7.1
+    tslib: ^2.8.1
+  checksum: 76aeb225a442bc143cbc834c472920846eed292e0edf639c9339a910c3b38304cdcb012127560db676683bd20d68ac3f6670aee452d7c228a3d5998c4326e5fe
   languageName: node
   linkType: hard
 
@@ -3578,6 +3599,23 @@ __metadata:
     mkdirp: ^1.0.4
     rimraf: ^3.0.2
   checksum: c96381d4a37448ea280951e46233f7e541058cf57a57d4094dd4bdcaae43fa5872b5f2eb6bfb004591a68e29c5877abe3cdc210cb3588cbf20ab2877f31a7de7
+  languageName: node
+  linkType: hard
+
+"@o16s/mcap-sheets@npm:0.2.0":
+  version: 0.2.0
+  resolution: "@o16s/mcap-sheets@npm:0.2.0::__archiveUrl=https%3A%2F%2Fnpm.pkg.github.com%2Fdownload%2F%40o16s%2Fmcap-sheets%2F0.2.0%2F9a10d88f7b5e2857ba3aea8a050ea7f4f33250bd"
+  dependencies:
+    "@mcap/browser": ^1.1.0
+    "@mcap/core": ^2.2.2
+    "@tanstack/react-table": ^8.21.3
+    "@tanstack/react-virtual": ^3.14.12
+    fzstd: ^0.1.1
+    lz4js: ^0.2.0
+  peerDependencies:
+    react: ">=18"
+    react-dom: ">=18"
+  checksum: 046fbe20e4ec0041facdfeebb6734f068b9e9d9a36bdc78d83301790c77fdd3275176b89969355c48ca276e58d41b158c889e6c654a8a73af0f4147f0381bb73
   languageName: node
   linkType: hard
 
@@ -5620,10 +5658,48 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@tanstack/react-table@npm:^8.21.3":
+  version: 8.21.3
+  resolution: "@tanstack/react-table@npm:8.21.3"
+  dependencies:
+    "@tanstack/table-core": 8.21.3
+  peerDependencies:
+    react: ">=16.8"
+    react-dom: ">=16.8"
+  checksum: 1452e7bd1dd0febbfc37e656c61c2c426dc243136333a8688bfadfccfec233e87c9bbe83011d742b0e86ae52c9b3d436bdc5618be4ac675ab921f52317317780
+  languageName: node
+  linkType: hard
+
+"@tanstack/react-virtual@npm:^3.14.12":
+  version: 3.14.12
+  resolution: "@tanstack/react-virtual@npm:3.14.12"
+  dependencies:
+    "@tanstack/virtual-core": 3.17.10
+  peerDependencies:
+    react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+    react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+  checksum: 86b9e3e9af9492fae7203f84bc6eacc90ae5dd4cc99c038356c2f7983dc53ec9cad5a7fad13ad9243278e288cbf076d9c6e838057edea8ad6d3a5cdcf47a861a
+  languageName: node
+  linkType: hard
+
 "@tanstack/table-core@npm:8.11.7":
   version: 8.11.7
   resolution: "@tanstack/table-core@npm:8.11.7"
   checksum: 0db445806a85d2a226225c7a6b31dae0e8be477172c0cabb796ccb2766bfec4c6a8930ebbaa7b4d410de170e1c41f2005bb47762677c059aecba69d65d22e496
+  languageName: node
+  linkType: hard
+
+"@tanstack/table-core@npm:8.21.3":
+  version: 8.21.3
+  resolution: "@tanstack/table-core@npm:8.21.3"
+  checksum: ce260ab981f334ba999240cf68ae942a524a28980f6853275da90d1864a8b56fa59b952bfd2266570f36ae11f66476d1c96dacc640ba5fd9d6d4e2a78cf05187
+  languageName: node
+  linkType: hard
+
+"@tanstack/virtual-core@npm:3.17.10":
+  version: 3.17.10
+  resolution: "@tanstack/virtual-core@npm:3.17.10"
+  checksum: 40c2c6fb387b59449f0d2f0b35d9136b987a0df0bdc68b03d010ed8e5122d67a73bfeb4bec58ceeb07d6e32c684caa96e28075220fee7899481dc713daabf695
   languageName: node
   linkType: hard
 
@@ -11725,6 +11801,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"fzstd@npm:^0.1.1":
+  version: 0.1.1
+  resolution: "fzstd@npm:0.1.1"
+  checksum: a06cc21096bbec787d99c4b1b9998fd6883c2e4e6550633956738992d6e49f94f027962c2d1a5f8d18f3b27ad630bb7d6b51dd3121dded8f9c8c854ff553a79a
+  languageName: node
+  linkType: hard
+
 "gauge@npm:^4.0.3":
   version: 4.0.4
   resolution: "gauge@npm:4.0.4"
@@ -12365,6 +12448,13 @@ __metadata:
   version: 2.2.0
   resolution: "heap-js@npm:2.2.0"
   checksum: be89ec49ceac0c55a1cdbbe47b8fad76b43d98468b72e7fb3302f048a796ca8c8e683d59ffe564cc0b5ad31b68770a31bf2f315e3739bd7165ea34d7562a4b6b
+  languageName: node
+  linkType: hard
+
+"heap-js@npm:^2.7.1":
+  version: 2.7.1
+  resolution: "heap-js@npm:2.7.1"
+  checksum: bbf309c8a472ac6e220eb3894b25ca01439d3b625775745876498cc18d37ef482709784b1c3f4fd0b01961ceb5d713ef053e25006a9fe3d4481e80a1d8f46dbd
   languageName: node
   linkType: hard
 
@@ -14512,6 +14602,13 @@ __metadata:
   bin:
     lz-string: bin/bin.js
   checksum: 1ee98b4580246fd90dd54da6e346fb1caefcf05f677c686d9af237a157fdea3fd7c83a4bc58f858cd5b10a34d27afe0fdcbd0505a47e0590726a873dc8b8f65d
+  languageName: node
+  linkType: hard
+
+"lz4js@npm:^0.2.0":
+  version: 0.2.0
+  resolution: "lz4js@npm:0.2.0"
+  checksum: 5cd48a9eb8b114560ec049b5abb736d9a48fa797459d3c470e5d4dfd2b6e6ea8325ea4bc4873f5ddf18fafc3b1c9e56381377a931923a0dd2c95073b0a3ff76e
   languageName: node
   linkType: hard
 
@@ -19557,6 +19654,13 @@ __metadata:
   version: 1.14.1
   resolution: "tslib@npm:1.14.1"
   checksum: dbe628ef87f66691d5d2959b3e41b9ca0045c3ee3c7c7b906cc1e328b39f199bb1ad9e671c39025bd56122ac57dfbf7385a94843b1cc07c60a4db74795829acd
+  languageName: node
+  linkType: hard
+
+"tslib@npm:^2.8.1":
+  version: 2.8.1
+  resolution: "tslib@npm:2.8.1"
+  checksum: e4aba30e632b8c8902b47587fd13345e2827fa639e7c3121074d5ee0880723282411a8838f830b55100cbe4517672f84a2472667d355b81e8af165a55dc6203a
   languageName: node
   linkType: hard
 
