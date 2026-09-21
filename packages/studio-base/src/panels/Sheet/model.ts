@@ -5,6 +5,7 @@
 import {
   openMcapWorkbook,
   openMcapWorkbookFromBlob,
+  type CellValue,
   type McapWorkbookSource,
 } from "@o16s/mcap-sheets";
 
@@ -40,6 +41,55 @@ export function makeBaseOpener(
   return file != undefined && isMcap(file.name)
     ? async () => await openMcapWorkbookFromBlob(file)
     : undefined;
+}
+
+/** A row's timestamp (nanoseconds) paired with its original (unfiltered) index. */
+export type TimeRow = { time: bigint; rowIndex: number };
+
+/**
+ * Build a time-sorted index of the rows' `timeColumn` (nanosecond strings) to
+ * their original row indices, for binary-searching the row at a playback time.
+ * Rows whose timestamp is missing or non-numeric are skipped.
+ */
+export function buildTimeIndex(
+  rows: readonly Record<string, CellValue>[],
+  timeColumn: string,
+): TimeRow[] {
+  const entries: TimeRow[] = [];
+  rows.forEach((row, rowIndex) => {
+    const raw = row[timeColumn];
+    if (typeof raw === "string" && raw.length > 0) {
+      try {
+        entries.push({ time: BigInt(raw), rowIndex });
+      } catch {
+        // Not an integer timestamp — skip.
+      }
+    }
+  });
+  entries.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+  return entries;
+}
+
+/**
+ * The original row index whose timestamp is the latest at or before
+ * `targetNanos`, or undefined when the target precedes every row. `index` must
+ * be sorted ascending by time (as {@link buildTimeIndex} returns).
+ */
+export function rowIndexAtTime(index: readonly TimeRow[], targetNanos: bigint): number | undefined {
+  let lo = 0;
+  let hi = index.length - 1;
+  let answer: number | undefined = undefined;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    const entry = index[mid]!;
+    if (entry.time <= targetNanos) {
+      answer = entry.rowIndex;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return answer;
 }
 
 /**
