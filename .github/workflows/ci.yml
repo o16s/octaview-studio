@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-20.04
+          - ubuntu-24.04
         config:
           # Specify names so that the GitHub branch protection settings for
           # required checks don't need to change if we ever change the commands used.
@@ -43,7 +43,7 @@ jobs:
           - name: test
             command: yarn run test --maxWorkers=100%
         include:
-          - os: windows-2019
+          - os: windows-2022
             config:
               name: packages
               command: echo complete
@@ -76,8 +76,8 @@ jobs:
       - run: ${{ matrix.config.command }}
 
   storybook:
-    name: storybook (ubuntu-20.04)
-    runs-on: ubuntu-20.04
+    name: storybook (ubuntu-24.04)
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4.1.1
@@ -121,7 +121,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-20.04]
+        os: [ubuntu-24.04]
 
     name: integration (${{ matrix.os }})
 
@@ -149,5 +149,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: test:web-integration
-        if: matrix.os == 'ubuntu-20.04'
+        if: matrix.os == 'ubuntu-24.04'
         run: yarn run test:web-integration
