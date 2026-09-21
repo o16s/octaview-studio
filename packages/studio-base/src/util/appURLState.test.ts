@@ -78,13 +78,13 @@ describe("parseLayoutParam", () => {
   };
 
   it("parses base64-encoded layout JSON", () => {
-    const encoded = btoa(JSON.stringify(sampleLayout));
+    const encoded = btoa(JSON.stringify(sampleLayout)!);
     const result = parseLayoutParam(encoded);
     expect(result).toEqual(sampleLayout);
   });
 
   it("parses raw JSON layout", () => {
-    const raw = JSON.stringify(sampleLayout);
+    const raw = JSON.stringify(sampleLayout)!;
     const result = parseLayoutParam(raw);
     expect(result).toEqual(sampleLayout);
   });
@@ -95,12 +95,12 @@ describe("parseLayoutParam", () => {
 
   it("requires layout field to be present", () => {
     const noLayout = { configById: {} };
-    expect(parseLayoutParam(JSON.stringify(noLayout))).toBeUndefined();
+    expect(parseLayoutParam(JSON.stringify(noLayout)!)).toBeUndefined();
   });
 
   it("fills in defaults for missing optional fields", () => {
     const minimal = { layout: "Plot!abc", configById: { "Plot!abc": {} } };
-    const result = parseLayoutParam(JSON.stringify(minimal));
+    const result = parseLayoutParam(JSON.stringify(minimal)!);
     expect(result).toEqual({
       layout: "Plot!abc",
       configById: { "Plot!abc": {} },
@@ -115,7 +115,7 @@ describe("parseAppURLState with layout params", () => {
   it("parses layout from URL", () => {
     const layout = { layout: "Plot!abc", configById: {} };
     const url = new URL("https://example.com/");
-    url.searchParams.set("layout", btoa(JSON.stringify(layout)));
+    url.searchParams.set("layout", btoa(JSON.stringify(layout)!));
     const state = parseAppURLState(url);
     expect(state?.layoutParam).toBeDefined();
   });

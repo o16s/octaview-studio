@@ -57,7 +57,7 @@ jobs:
 
       - uses: actions/setup-node@v4.0.1
         with:
-          node-version: 16.17
+          node-version: 20
       - run: corepack enable yarn
 
       - name: Restore cache
@@ -87,7 +87,7 @@ jobs:
 
       - uses: actions/setup-node@v4.0.1
         with:
-          node-version: 16.17
+          node-version: 20
       - run: corepack enable yarn
 
       - name: Restore cache
@@ -132,7 +132,7 @@ jobs:
 
       - uses: actions/setup-node@v4.0.1
         with:
-          node-version: 16.17
+          node-version: 20
       - run: corepack enable yarn
 
       - name: Restore cache
