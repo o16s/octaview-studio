@@ -186,8 +186,15 @@ export class McapIndexedIterableSource implements IIterableSource {
       }
       try {
         // Producer cost attribution (worker context — logs its own [perf] line):
-        // raw bytes read vs time spent deserializing them.
-        perfStats.count("mcapRead.rawMB", message.data.byteLength / 1e6);
+        // RAW bytes read (the actual work volume — cache byte counters are
+        // based on memoized sliced-size estimates and understate wildly) split
+        // by category, vs time spent deserializing.
+        perfStats.count(
+          channelInfo.schemaName === "foxglove.CompressedVideo"
+            ? "mcapRead.rawVideoMB"
+            : "mcapRead.rawOtherMB",
+          message.data.byteLength / 1e6,
+        );
         const deserializeStartMs = performance.now();
         const msg = channelInfo.parsedChannel.deserialize(message.data) as Record<string, unknown>;
         perfStats.count("mcapRead.deserializeMs", performance.now() - deserializeStartMs);
