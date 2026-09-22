@@ -85,6 +85,20 @@ func cacheSamples(db *sql.DB, filePath, topic, field string, decimation int, ts,
 	tx.Commit()
 }
 
+// purgeCacheEntry removes every cached artifact of one file (index row,
+// topics, fields, samples). Called when the file has disappeared from disk.
+func purgeCacheEntry(db *sql.DB, relPath string) {
+	if db == nil {
+		return
+	}
+	indexDBWriteMu.Lock()
+	defer indexDBWriteMu.Unlock()
+	db.Exec(`DELETE FROM mcap_index WHERE path = ?`, relPath)
+	db.Exec(`DELETE FROM mcap_topics WHERE path = ?`, relPath)
+	db.Exec(`DELETE FROM mcap_fields WHERE file_path = ?`, relPath)
+	db.Exec(`DELETE FROM mcap_samples WHERE file_path = ?`, relPath)
+}
+
 // parseCgroupMemoryLimit parses the content of a cgroup memory-limit file.
 // Returns false for the "max"/unlimited sentinels and anything unparseable.
 func parseCgroupMemoryLimit(s string) (int64, bool) {
@@ -616,13 +630,12 @@ func sampleFieldFromFile(
 	}
 	defer reader.Close()
 
-	readOpts := []mcap.ReadOpt{
-		mcap.WithTopics([]string{topic}),
-		mcap.AfterNanos(startNs),
-		mcap.BeforeNanos(endNs),
-	}
-
-	it, err := reader.Messages(readOpts...)
+	// Cache miss: read and cache the file's ENTIRE series for this
+	// (topic, field, decimation), then return only the requested slice.
+	// Reading just [startNs, endNs] would poison the cache — the hit test
+	// above treats any overlapping rows as full coverage, so a narrow
+	// first request would permanently truncate later, wider ones.
+	it, err := reader.Messages(mcap.WithTopics([]string{topic}))
 	if err != nil {
 		return nil, nil, fmt.Errorf("messages: %w", err)
 	}
@@ -668,7 +681,16 @@ func sampleFieldFromFile(
 
 	cacheSamples(db, filePath, topic, field, decimation, allTs, allVals)
 
-	return allTs, allVals, nil
+	// Slice to the requested range (same inclusive bounds as the cache query).
+	startSec, endSec := float64(startNs)/1e9, float64(endNs)/1e9
+	var outTs, outVals []float64
+	for i, ts := range allTs {
+		if ts >= startSec && ts <= endSec {
+			outTs = append(outTs, ts)
+			outVals = append(outVals, allVals[i])
+		}
+	}
+	return outTs, outVals, nil
 }
 
 // extractProtobufBytesField extracts a length-delimited field by number from
@@ -1467,165 +1489,7 @@ func main() {
 
 		// API: sample field values from MCAP files in a folder
 		// GET /api/mcap/sample?folder=<folder>&topic=<topic>&field=<field>&start=<unix_sec>&end=<unix_sec>[&decimation=10][&maxPoints=500]
-		mux.HandleFunc("/api/mcap/sample", func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodGet {
-				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-
-			q := r.URL.Query()
-			folder := q.Get("folder")
-			topic := q.Get("topic")
-			field := q.Get("field")
-			startStr := q.Get("start")
-			endStr := q.Get("end")
-
-			if folder == "" || topic == "" || field == "" || startStr == "" || endStr == "" {
-				http.Error(w, "Missing required parameters: folder, topic, field, start, end", http.StatusBadRequest)
-				return
-			}
-
-			startSec, err := strconv.ParseFloat(startStr, 64)
-			if err != nil {
-				http.Error(w, "Invalid 'start' parameter", http.StatusBadRequest)
-				return
-			}
-			endSec, err := strconv.ParseFloat(endStr, 64)
-			if err != nil {
-				http.Error(w, "Invalid 'end' parameter", http.StatusBadRequest)
-				return
-			}
-
-			decimation := 10
-			if d := q.Get("decimation"); d != "" {
-				if v, err := strconv.Atoi(d); err == nil && v > 0 {
-					decimation = v
-				}
-			}
-			maxPoints := 500
-			if m := q.Get("maxPoints"); m != "" {
-				if v, err := strconv.Atoi(m); err == nil && v > 0 {
-					maxPoints = v
-				}
-			}
-
-			startNs := uint64(startSec * 1e9)
-			endNs := uint64(endSec * 1e9)
-
-			// Find files in folder overlapping [startNs, endNs]
-			type fileEntry struct {
-				path    string
-				startNs uint64
-				endNs   uint64
-			}
-			var files []fileEntry
-
-			if indexDB != nil {
-				var pathPattern string
-				if folder == "" || folder == "." || folder == "/" {
-					pathPattern = "%"
-				} else {
-					pathPattern = strings.TrimSuffix(folder, "/") + "/%"
-				}
-				rows, err := indexDB.Query(
-					`SELECT path, start_time, end_time FROM mcap_index
-				 WHERE path LIKE ? AND end_time > ? AND start_time < ?
-				 ORDER BY start_time`,
-					pathPattern, startNs, endNs,
-				)
-				if err == nil {
-					for rows.Next() {
-						var fe fileEntry
-						if rows.Scan(&fe.path, &fe.startNs, &fe.endNs) == nil {
-							files = append(files, fe)
-						}
-					}
-					rows.Close()
-				}
-			}
-
-			if len(files) == 0 {
-				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("Access-Control-Allow-Origin", "*")
-				json.NewEncoder(w).Encode(map[string]interface{}{"segments": []interface{}{}})
-				return
-			}
-
-			// Sample each file concurrently (limited by sampleSemaphore)
-			type sampleSegment struct {
-				File       string    `json:"file"`
-				Timestamps []float64 `json:"timestamps"`
-				Values     []float64 `json:"values"`
-			}
-			type indexedSegment struct {
-				idx     int
-				segment sampleSegment
-				err     error
-			}
-
-			results := make(chan indexedSegment, len(files))
-			var wg sync.WaitGroup
-			done := r.Context().Done()
-			pointsPerFile := int(math.Max(float64(maxPoints)/float64(len(files)), 20))
-
-			for i, fe := range files {
-				wg.Add(1)
-				go func(idx int, fe fileEntry) {
-					defer wg.Done()
-					// Clamp the range to this file's time span
-					fStart := startNs
-					if fe.startNs > fStart {
-						fStart = fe.startNs
-					}
-					fEnd := endNs
-					if fe.endNs < fEnd {
-						fEnd = fe.endNs
-					}
-					ts, vals, err := sampleFieldFromFile(indexDB, fe.path, absPath, topic, field, fStart, fEnd, decimation, done)
-					if err != nil {
-						results <- indexedSegment{idx: idx, err: err}
-						return
-					}
-					// Downsample to fit in budget
-					ts, vals = minMaxDownsample(ts, vals, pointsPerFile)
-					results <- indexedSegment{
-						idx:     idx,
-						segment: sampleSegment{File: fe.path, Timestamps: ts, Values: vals},
-					}
-				}(i, fe)
-			}
-
-			go func() {
-				wg.Wait()
-				close(results)
-			}()
-
-			segments := make([]sampleSegment, len(files))
-			for res := range results {
-				if res.err == nil && len(res.segment.Timestamps) > 0 {
-					segments[res.idx] = res.segment
-				}
-			}
-			// Filter out empty segments
-			var nonEmpty []sampleSegment
-			for _, s := range segments {
-				if len(s.Timestamps) > 0 {
-					nonEmpty = append(nonEmpty, s)
-				}
-			}
-			// Sort by first timestamp
-			sort.Slice(nonEmpty, func(i, j int) bool {
-				return nonEmpty[i].Timestamps[0] < nonEmpty[j].Timestamps[0]
-			})
-
-			if nonEmpty == nil {
-				nonEmpty = []sampleSegment{}
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			json.NewEncoder(w).Encode(map[string]interface{}{"segments": nonEmpty})
-		})
+		mux.HandleFunc("/api/mcap/sample", mcapSampleHandler(absPath, indexDB))
 
 	} // end if absPath != ""
 
@@ -1808,11 +1672,199 @@ func main() {
 	}
 }
 
+// liveWindowNs is the "still recording?" guard: a file whose last message lies
+// within this window of now may still be growing and is never trusted as
+// settled.
+const liveWindowNs uint64 = 5 * 60 * 1e9 // 5 minutes
+
+// mcapSampleHandler serves decimated per-file time series for one field:
+// GET /api/mcap/sample?folder=F&topic=T&field=X&start=S&end=E[&decimation=10][&maxPoints=500]
+//
+// Every file overlapping the range appears in the response — files that could
+// not be read yield a segment carrying `error` plus the file's time range, so
+// the client can render "unreadable" distinguishably from "no data recorded".
+func mcapSampleHandler(absPath string, indexDB *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		q := r.URL.Query()
+		folder := q.Get("folder")
+		topic := q.Get("topic")
+		field := q.Get("field")
+		startStr := q.Get("start")
+		endStr := q.Get("end")
+
+		if folder == "" || topic == "" || field == "" || startStr == "" || endStr == "" {
+			http.Error(w, "Missing required parameters: folder, topic, field, start, end", http.StatusBadRequest)
+			return
+		}
+
+		startSec, err := strconv.ParseFloat(startStr, 64)
+		if err != nil {
+			http.Error(w, "Invalid 'start' parameter", http.StatusBadRequest)
+			return
+		}
+		endSec, err := strconv.ParseFloat(endStr, 64)
+		if err != nil {
+			http.Error(w, "Invalid 'end' parameter", http.StatusBadRequest)
+			return
+		}
+
+		decimation := 10
+		if d := q.Get("decimation"); d != "" {
+			if v, err := strconv.Atoi(d); err == nil && v > 0 {
+				decimation = v
+			}
+		}
+		maxPoints := 500
+		if m := q.Get("maxPoints"); m != "" {
+			if v, err := strconv.Atoi(m); err == nil && v > 0 {
+				maxPoints = v
+			}
+		}
+
+		startNs := uint64(startSec * 1e9)
+		endNs := uint64(endSec * 1e9)
+
+		// Find files in folder overlapping [startNs, endNs]
+		type fileEntry struct {
+			path    string
+			startNs uint64
+			endNs   uint64
+		}
+		var files []fileEntry
+
+		if indexDB != nil {
+			var pathPattern string
+			if folder == "" || folder == "." || folder == "/" {
+				pathPattern = "%"
+			} else {
+				pathPattern = strings.TrimSuffix(folder, "/") + "/%"
+			}
+			rows, err := indexDB.Query(
+				`SELECT path, start_time, end_time FROM mcap_index
+			 WHERE path LIKE ? AND end_time > ? AND start_time < ?
+			 ORDER BY start_time`,
+				pathPattern, startNs, endNs,
+			)
+			if err == nil {
+				for rows.Next() {
+					var fe fileEntry
+					if rows.Scan(&fe.path, &fe.startNs, &fe.endNs) == nil {
+						files = append(files, fe)
+					}
+				}
+				rows.Close()
+			}
+		}
+
+		if len(files) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			json.NewEncoder(w).Encode(map[string]interface{}{"segments": []interface{}{}})
+			return
+		}
+
+		// Sample each file concurrently (limited by sampleSemaphore)
+		type sampleSegment struct {
+			File       string    `json:"file"`
+			Timestamps []float64 `json:"timestamps,omitempty"`
+			Values     []float64 `json:"values,omitempty"`
+			StartTime  float64   `json:"startTime"`
+			EndTime    float64   `json:"endTime"`
+			Error      string    `json:"error,omitempty"`
+		}
+		type indexedSegment struct {
+			idx     int
+			segment sampleSegment
+			ok      bool
+		}
+
+		results := make(chan indexedSegment, len(files))
+		var wg sync.WaitGroup
+		done := r.Context().Done()
+		nowNs := uint64(time.Now().UnixNano())
+		pointsPerFile := int(math.Max(float64(maxPoints)/float64(len(files)), 20))
+
+		for i, fe := range files {
+			wg.Add(1)
+			go func(idx int, fe fileEntry) {
+				defer wg.Done()
+				// Clamp the range to this file's time span
+				fStart := startNs
+				if fe.startNs > fStart {
+					fStart = fe.startNs
+				}
+				fEnd := endNs
+				if fe.endNs < fEnd {
+					fEnd = fe.endNs
+				}
+				seg := sampleSegment{
+					File:      fe.path,
+					StartTime: float64(fStart) / 1e9,
+					EndTime:   float64(fEnd) / 1e9,
+				}
+				ts, vals, err := sampleFieldFromFile(indexDB, fe.path, absPath, topic, field, fStart, fEnd, decimation, done)
+				if err != nil {
+					select {
+					case <-done:
+						// Client gone — nobody will read this response.
+						results <- indexedSegment{idx: idx}
+						return
+					default:
+					}
+					// A silent gap would be indistinguishable from "no data
+					// recorded" — carry the failure to the client instead.
+					if fe.endNs+liveWindowNs >= nowNs {
+						seg.Error = "still recording — no preview yet"
+					} else {
+						seg.Error = err.Error()
+					}
+					results <- indexedSegment{idx: idx, segment: seg, ok: true}
+					return
+				}
+				// Downsample to fit in budget
+				seg.Timestamps, seg.Values = minMaxDownsample(ts, vals, pointsPerFile)
+				results <- indexedSegment{idx: idx, segment: seg, ok: len(seg.Timestamps) > 0}
+			}(i, fe)
+		}
+
+		go func() {
+			wg.Wait()
+			close(results)
+		}()
+
+		segments := make([]sampleSegment, len(files))
+		keep := make([]bool, len(files))
+		for res := range results {
+			segments[res.idx] = res.segment
+			keep[res.idx] = res.ok
+		}
+		nonEmpty := []sampleSegment{}
+		for i, s := range segments {
+			if keep[i] {
+				nonEmpty = append(nonEmpty, s)
+			}
+		}
+		sort.Slice(nonEmpty, func(i, j int) bool {
+			return nonEmpty[i].StartTime < nonEmpty[j].StartTime
+		})
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		json.NewEncoder(w).Encode(map[string]interface{}{"segments": nonEmpty})
+	}
+}
+
 // mcapIndexHandler streams the recording index as NDJSON. It bulk-loads the
 // SQLite cache once, emits the total from that cache (so the first byte lands
-// immediately instead of after a full disk walk), streams settled cached files
-// without touching disk, and reads only new/growing files — concurrently — so
-// they never stall the cached majority.
+// immediately instead of after a full disk walk), then streams cached files
+// newest-first, each gated by a stat (missing → purged, size/mod-time changed
+// or possibly still growing → re-read). Only re-reads and never-seen files
+// touch file contents, concurrently, so they never stall the cached majority.
 func mcapIndexHandler(absPath string, indexDB *sql.DB, indexScanWorkers int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -1894,16 +1946,17 @@ func mcapIndexHandler(absPath string, indexDB *sql.DB, indexScanWorkers int) htt
 		// it without touching the disk at all.
 		type cachedEntry struct {
 			size           int64
+			modTime        string
 			startNs, endNs uint64
 			topics         []McapTopicInfo
 		}
 		cacheIndex := make(map[string]cachedEntry)
 		if indexDB != nil {
-			if rows, err := indexDB.Query(`SELECT path, size, start_time, end_time FROM mcap_index`); err == nil {
+			if rows, err := indexDB.Query(`SELECT path, mod_time, size, start_time, end_time FROM mcap_index`); err == nil {
 				for rows.Next() {
 					var p string
 					var ce cachedEntry
-					if rows.Scan(&p, &ce.size, &ce.startNs, &ce.endNs) == nil {
+					if rows.Scan(&p, &ce.modTime, &ce.size, &ce.startNs, &ce.endNs) == nil {
 						cacheIndex[p] = ce
 					}
 				}
@@ -1973,17 +2026,56 @@ func mcapIndexHandler(absPath string, indexDB *sql.DB, indexScanWorkers int) htt
 			return &fi
 		}
 
-		// Phase 2: single walk. Cached, settled files are emitted straight from
-		// the maps (no stat, no read). New files — and any cached file whose
-		// end_time is recent enough that it may still be growing — are collected
-		// for the read pass below so they never stall the cached majority.
-		//
-		// nowNs/liveWindowNs form the "still recording?" guard: a cached file
-		// whose end lies within the window is re-read to catch appended data;
-		// everything older is trusted as immutable-at-rest.
+		// Phase 2a: stream the cached files first, NEWEST first (so the UI's
+		// timeline fills from the most recent recordings backwards). Each row
+		// passes a cheap stat gate before being trusted:
+		//   - file gone            → purge its cache rows, emit nothing
+		//   - size/mod_time differ → the bytes changed since indexing; re-read
+		//   - end within the live window → may still be growing; re-read
+		// Only the re-reads touch file contents; a trusted row costs one stat.
 		nowNs := uint64(time.Now().UnixNano())
-		const liveWindowNs uint64 = 5 * 60 * 1e9 // 5 minutes
 		type newFile struct{ path, relPath string }
+		var rereads []newFile
+
+		cachedPaths := make([]string, 0, len(cacheIndex))
+		for p := range cacheIndex {
+			cachedPaths = append(cachedPaths, p)
+		}
+		sort.Slice(cachedPaths, func(i, j int) bool {
+			a, b := cacheIndex[cachedPaths[i]], cacheIndex[cachedPaths[j]]
+			if a.endNs != b.endNs {
+				return a.endNs > b.endNs
+			}
+			return cachedPaths[i] > cachedPaths[j]
+		})
+		for _, relPath := range cachedPaths {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			ce := cacheIndex[relPath]
+			fullPath := filepath.Join(absPath, relPath)
+			info, err := os.Stat(fullPath)
+			if err != nil {
+				purgeCacheEntry(indexDB, relPath)
+				continue
+			}
+			changed := info.Size() != ce.size ||
+				info.ModTime().UTC().Format(time.RFC3339) != ce.modTime
+			if changed || ce.endNs+liveWindowNs >= nowNs {
+				rereads = append(rereads, newFile{path: fullPath, relPath: relPath})
+				continue
+			}
+			if passesFilter(ce.startNs, ce.endNs) {
+				enc.Encode(map[string]interface{}{"file": makeFileIndex(relPath, ce.startNs, ce.endNs, ce.size, ce.topics)})
+				flusher.Flush()
+			}
+		}
+
+		// Phase 2b: walk the tree for files the cache has never seen (plus
+		// seenPaths for the stale-row reconcile). Cached files were fully
+		// handled above; the walk does no emission of its own.
 		var newEntries []newFile
 		seenPaths := make(map[string]struct{}, len(cacheIndex))
 		filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
@@ -2000,18 +2092,17 @@ func mcapIndexHandler(absPath string, indexDB *sql.DB, indexScanWorkers int) htt
 			}
 			relPath, _ := filepath.Rel(absPath, path)
 			seenPaths[relPath] = struct{}{}
-			if ce, ok := cacheIndex[relPath]; ok && ce.endNs+liveWindowNs < nowNs {
-				// Settled cached file: trust the cache, no disk access.
-				if passesFilter(ce.startNs, ce.endNs) {
-					enc.Encode(map[string]interface{}{"file": makeFileIndex(relPath, ce.startNs, ce.endNs, ce.size, ce.topics)})
-					flusher.Flush()
-				}
-			} else {
-				// New file, or a cached file that may still be growing → (re)read.
+			if _, ok := cacheIndex[relPath]; !ok {
 				newEntries = append(newEntries, newFile{path: path, relPath: relPath})
 			}
 			return nil
 		})
+		// Timestamped filenames sort chronologically, so path-descending puts
+		// the newest uncached files first, matching the cached stream above.
+		sort.Slice(newEntries, func(i, j int) bool { return newEntries[i].relPath > newEntries[j].relPath })
+		// Re-reads (live/changed files — the newest data of all) go before
+		// never-seen files.
+		newEntries = append(rereads, newEntries...)
 
 		// A disconnected client leaves seenPaths partial; returning here skips the
 		// Phase 3 stale-cleanup, which is required — cleanup with a partial
@@ -2087,13 +2178,9 @@ func mcapIndexHandler(absPath string, indexDB *sql.DB, indexScanWorkers int) htt
 			}
 			rows.Close()
 			for _, p := range stalePaths {
-				// Per-path locking so a long cleanup doesn't block other writers.
-				indexDBWriteMu.Lock()
-				indexDB.Exec(`DELETE FROM mcap_index WHERE path = ?`, p)
-				indexDB.Exec(`DELETE FROM mcap_topics WHERE path = ?`, p)
-				indexDB.Exec(`DELETE FROM mcap_fields WHERE file_path = ?`, p)
-				indexDB.Exec(`DELETE FROM mcap_samples WHERE file_path = ?`, p)
-				indexDBWriteMu.Unlock()
+				// purgeCacheEntry locks per path, so a long cleanup doesn't
+				// block other writers.
+				purgeCacheEntry(indexDB, p)
 			}
 		}
 

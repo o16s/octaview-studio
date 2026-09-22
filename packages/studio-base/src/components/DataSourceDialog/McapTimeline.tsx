@@ -131,13 +131,22 @@ type SparklineField = { topic: string; field: string; type: string };
 /** Merge new segments into existing ones, deduplicating by file and sorting by timestamp. */
 function mergeSegments(existing: SparklineSegment[], incoming: SparklineSegment[]): SparklineSegment[] {
   const byFile = new Map<string, { timestamps: number[]; values: number[] }>();
+  // Error segments (file unreadable / still recording) survive only while no
+  // real data exists for that file.
+  const errorsByFile = new Map<string, SparklineSegment>();
   for (const seg of [...existing, ...incoming]) {
+    if (seg.error != null && (seg.timestamps?.length ?? 0) === 0) {
+      errorsByFile.set(seg.file, seg);
+      continue;
+    }
+    const ts = seg.timestamps ?? [];
+    const vals = seg.values ?? [];
     const entry = byFile.get(seg.file);
     if (entry) {
-      entry.timestamps.push(...seg.timestamps);
-      entry.values.push(...seg.values);
+      entry.timestamps.push(...ts);
+      entry.values.push(...vals);
     } else {
-      byFile.set(seg.file, { timestamps: [...seg.timestamps], values: [...seg.values] });
+      byFile.set(seg.file, { timestamps: [...ts], values: [...vals] });
     }
   }
   const result: SparklineSegment[] = [];
@@ -156,10 +165,25 @@ function mergeSegments(existing: SparklineSegment[], incoming: SparklineSegment[
     }
     result.push({ file, timestamps: dedupTs, values: dedupVals });
   }
-  result.sort((a, b) => (a.timestamps[0] ?? 0) - (b.timestamps[0] ?? 0));
+  for (const [file, seg] of errorsByFile) {
+    if (!byFile.has(file)) {
+      result.push(seg);
+    }
+  }
+  result.sort(
+    (a, b) => (a.timestamps?.[0] ?? a.startTime ?? 0) - (b.timestamps?.[0] ?? b.startTime ?? 0),
+  );
   return result;
 }
-type SparklineSegment = { file: string; timestamps: number[]; values: number[] };
+type SparklineSegment = {
+  file: string;
+  timestamps?: number[];
+  values?: number[];
+  /** Present (with startTime/endTime) when the server could not read the file. */
+  error?: string;
+  startTime?: number;
+  endTime?: number;
+};
 
 const ROW_HEIGHT = 20;
 const SPARKLINE_ROW_HEIGHT = 20;
@@ -595,7 +619,9 @@ export default function McapTimeline(): JSX.Element {
     const controller = new AbortController();
     setError(undefined);
     if (isRefresh) {
+      // Keep the current timeline on screen; the progress bar still shows.
       setRefreshing(true);
+      setIndexProgress(undefined);
     } else {
       setLoading(true);
       setIndexProgress(undefined);
@@ -636,15 +662,16 @@ export default function McapTimeline(): JSX.Element {
             try {
               const msg = JSON.parse(line) as Record<string, unknown>;
               if ("total" in msg) {
-                if (!isRefresh) {
-                  setIndexProgress({ indexed: 0, total: msg.total as number });
-                }
+                setIndexProgress({ indexed: 0, total: msg.total as number });
               } else if ("file" in msg) {
                 accumulated.push(msg.file as McapFileIndex);
                 indexed++;
-                // Stream progress to UI on initial load only
-                if (!isRefresh && indexed % 10 === 0) {
-                  setFiles([...accumulated]);
+                if (indexed % 10 === 0) {
+                  // Progressively reveal files on initial load only — a
+                  // refresh keeps the existing timeline until the swap below.
+                  if (!isRefresh) {
+                    setFiles([...accumulated]);
+                  }
                   setIndexProgress((prev) => prev ? { ...prev, indexed } : undefined);
                 }
               }
@@ -967,11 +994,13 @@ export default function McapTimeline(): JSX.Element {
             let nearest: { time: number; value: number } | undefined;
             let bestDist = Infinity;
             for (const seg of segments) {
-              for (let j = 0; j < seg.timestamps.length; j++) {
-                const dist = Math.abs(seg.timestamps[j]! - hoverTime);
+              const segTs = seg.timestamps ?? [];
+              const segVals = seg.values ?? [];
+              for (let j = 0; j < segTs.length; j++) {
+                const dist = Math.abs(segTs[j]! - hoverTime);
                 if (dist < bestDist) {
                   bestDist = dist;
-                  nearest = { time: seg.timestamps[j]!, value: seg.values[j]! };
+                  nearest = { time: segTs[j]!, value: segVals[j]! };
                 }
               }
             }
@@ -1266,7 +1295,7 @@ export default function McapTimeline(): JSX.Element {
           </Stack>
         )}
 
-        {indexProgress != null && indexProgress.total > 0 && loading && (
+        {indexProgress != null && indexProgress.total > 0 && (loading || refreshing) && (
           <Stack direction="row" alignItems="center" gap={1.5} paddingBottom={1}>
             <LinearProgress
               variant="determinate"
@@ -1588,16 +1617,17 @@ export default function McapTimeline(): JSX.Element {
                   const rowY = sparkBaseY + sparkIdx * SPARKLINE_ROW_HEIGHT;
                   const rowH = SPARKLINE_ROW_HEIGHT - 2; // 1px margin top/bottom
 
+                  const errorSegments = segments.filter((s) => s.error != null);
                   // Compute Y range across all segments for auto-scaling
                   let minVal = Infinity;
                   let maxVal = -Infinity;
                   for (const seg of segments) {
-                    for (const v of seg.values) {
+                    for (const v of seg.values ?? []) {
                       if (v < minVal) {minVal = v;}
                       if (v > maxVal) {maxVal = v;}
                     }
                   }
-                  if (!isFinite(minVal)) {
+                  if (!isFinite(minVal) && errorSegments.length === 0) {
                     return null;
                   }
                   // For boolean signals, force 0-1 range
@@ -1617,21 +1647,45 @@ export default function McapTimeline(): JSX.Element {
                         height={SPARKLINE_ROW_HEIGHT}
                         fill="transparent"
                       />
+                      {/* Unreadable/still-recording files: grey region instead
+                          of a silent gap, with the reason as native tooltip. */}
+                      {errorSegments.map((seg) => {
+                        const x1 = timeToX(seg.startTime ?? 0);
+                        const x2 = timeToX(seg.endTime ?? 0);
+                        if (x2 < 0 || x1 > svgWidth) {
+                          return null;
+                        }
+                        return (
+                          <rect
+                            key={`sparkline-error-${key}-${seg.file}`}
+                            x={Math.max(x1, 0)}
+                            y={rowY + 1}
+                            width={Math.max(Math.min(x2, svgWidth) - Math.max(x1, 0), 2)}
+                            height={rowH}
+                            fill="currentColor"
+                            opacity={0.15}
+                          >
+                            <title>{`${seg.file}: ${seg.error ?? "unreadable"}`}</title>
+                          </rect>
+                        );
+                      })}
                       {(() => {
                         // Flatten all segments into one continuous polyline
                         const allPoints: string[] = [];
                         let prevVal: number | undefined;
                         for (const seg of segments) {
-                          for (let j = 0; j < seg.timestamps.length; j++) {
-                            const x = timeToX(seg.timestamps[j]!);
-                            const yVal = rowY + 1 + (1 - (seg.values[j]! - minVal) / valRange) * rowH;
+                          const segTs = seg.timestamps ?? [];
+                          const segVals = seg.values ?? [];
+                          for (let j = 0; j < segTs.length; j++) {
+                            const x = timeToX(segTs[j]!);
+                            const yVal = rowY + 1 + (1 - (segVals[j]! - minVal) / valRange) * rowH;
                             if (type === "boolean" && prevVal != null) {
                               // Step function: horizontal line at previous y to current x
                               const prevY = rowY + 1 + (1 - (prevVal - minVal) / valRange) * rowH;
                               allPoints.push(`${x},${prevY}`);
                             }
                             allPoints.push(`${x},${yVal}`);
-                            prevVal = seg.values[j]!;
+                            prevVal = segVals[j]!;
                           }
                         }
                         if (allPoints.length === 0) {

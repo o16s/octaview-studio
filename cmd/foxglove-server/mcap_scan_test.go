@@ -2,7 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -303,6 +307,143 @@ func TestCacheSamplesWaitsForWriteMutex(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("rows = %d, want 1", count)
+	}
+}
+
+// writeSeriesMcap writes n json messages {"v": <i>} at startNs + i*stepNs.
+func writeSeriesMcap(t *testing.T, path, topic string, startNs, stepNs uint64, n int) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer f.Close()
+	w, err := mcap.NewWriter(f, &mcap.WriterOptions{Chunked: true, ChunkSize: 1 << 16})
+	if err != nil {
+		t.Fatalf("writer: %v", err)
+	}
+	if err := w.WriteHeader(&mcap.Header{Library: "test"}); err != nil {
+		t.Fatalf("header: %v", err)
+	}
+	if err := w.WriteSchema(&mcap.Schema{ID: 1, Name: "s", Encoding: "jsonschema", Data: []byte("{}")}); err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	if err := w.WriteChannel(&mcap.Channel{ID: 0, SchemaID: 1, Topic: topic, MessageEncoding: "json"}); err != nil {
+		t.Fatalf("channel: %v", err)
+	}
+	for i := 0; i < n; i++ {
+		ts := startNs + uint64(i)*stepNs
+		payload := fmt.Sprintf(`{"v": %d}`, i)
+		if err := w.WriteMessage(&mcap.Message{ChannelID: 0, LogTime: ts, PublishTime: ts, Data: []byte(payload)}); err != nil {
+			t.Fatalf("message: %v", err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+}
+
+// A narrow first request must not poison the cache for later wider requests:
+// the cache-hit test treats any overlapping rows as coverage, so the miss
+// path has to cache the file's entire series.
+func TestSampleNarrowRequestDoesNotPoisonCache(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestDB(t, dir)
+	// 10 messages at 1s..10s
+	writeSeriesMcap(t, filepath.Join(dir, "s.mcap"), "plc/tags", 1_000_000_000, 1_000_000_000, 10)
+	done := make(chan struct{})
+
+	// First touch: narrow window covering only 2s..3s.
+	ts1, vals1, err := sampleFieldFromFile(db, "s.mcap", dir, "plc/tags", "v", 2_000_000_000, 3_000_000_000, 1, done)
+	if err != nil {
+		t.Fatalf("narrow sample: %v", err)
+	}
+	if len(ts1) != 2 || vals1[0] != 1 || vals1[1] != 2 {
+		t.Fatalf("narrow = %v %v, want the 2 points at 2s,3s", ts1, vals1)
+	}
+
+	// Wider request over the whole file must return all 10 points.
+	ts2, _, err := sampleFieldFromFile(db, "s.mcap", dir, "plc/tags", "v", 0, 11_000_000_000, 1, done)
+	if err != nil {
+		t.Fatalf("full sample: %v", err)
+	}
+	if len(ts2) != 10 {
+		t.Fatalf("full range returned %d points, want 10 (cache poisoned by narrow request)", len(ts2))
+	}
+
+	// And the full series must now be served from cache (file unreadable).
+	if err := os.Truncate(filepath.Join(dir, "s.mcap"), 0); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	ts3, _, err := sampleFieldFromFile(db, "s.mcap", dir, "plc/tags", "v", 0, 11_000_000_000, 1, done)
+	if err != nil {
+		t.Fatalf("cached sample: %v", err)
+	}
+	if len(ts3) != 10 {
+		t.Fatalf("cached full range returned %d points, want 10", len(ts3))
+	}
+}
+
+// A file whose sample read fails must appear in the response as an error
+// segment carrying the file's time range — a silent gap is indistinguishable
+// from "no data recorded" and destroys trust in the chart.
+func TestSampleHandlerReportsUnreadableFiles(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestDB(t, dir)
+	if err := os.MkdirAll(filepath.Join(dir, "f"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// good.mcap: readable series, indexed.
+	writeSeriesMcap(t, filepath.Join(dir, "f", "good.mcap"), "plc/tags", 1_000_000_000, 1_000_000_000, 5)
+	seedCacheForFile(t, db, dir, "f/good.mcap", "plc/tags", 1_000_000_000, 5_000_000_000)
+
+	// bad.mcap: indexed, but its bytes are not a valid MCAP.
+	if err := os.WriteFile(filepath.Join(dir, "f", "bad.mcap"), []byte("garbage"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seedCacheForFile(t, db, dir, "f/bad.mcap", "plc/tags", 11_000_000_000, 20_000_000_000)
+
+	h := mcapSampleHandler(dir, db)
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/mcap/sample?folder=f&topic=plc/tags&field=v&start=0&end=30&decimation=1", nil)
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var resp struct {
+		Segments []struct {
+			File       string    `json:"file"`
+			Timestamps []float64 `json:"timestamps"`
+			Error      string    `json:"error"`
+			StartTime  float64   `json:"startTime"`
+			EndTime    float64   `json:"endTime"`
+		} `json:"segments"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("bad JSON: %v", err)
+	}
+
+	byFile := map[string]int{}
+	for i, s := range resp.Segments {
+		byFile[s.File] = i
+	}
+	gi, ok := byFile["f/good.mcap"]
+	if !ok || len(resp.Segments[gi].Timestamps) != 5 || resp.Segments[gi].Error != "" {
+		t.Errorf("good segment = %+v, want 5 points and no error", resp.Segments)
+	}
+	bi, ok := byFile["f/bad.mcap"]
+	if !ok {
+		t.Fatalf("unreadable file missing from response — silent gap: %+v", resp.Segments)
+	}
+	bad := resp.Segments[bi]
+	if bad.Error == "" || len(bad.Timestamps) != 0 {
+		t.Errorf("bad segment = %+v, want an error and no points", bad)
+	}
+	if bad.StartTime != 11 || bad.EndTime != 20 {
+		t.Errorf("bad segment range = [%v, %v], want [11, 20] so the UI can draw the region", bad.StartTime, bad.EndTime)
 	}
 }
 

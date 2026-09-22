@@ -73,6 +73,29 @@ func seedCache(t *testing.T, db *sql.DB, path, topic string, startNs, endNs uint
 	}
 }
 
+// seedCacheForFile seeds a cache row whose size and mod_time match the file on
+// disk, so the stat gate trusts it. Returns the file's size.
+func seedCacheForFile(t *testing.T, db *sql.DB, dir, relPath, topic string, startNs, endNs uint64) int64 {
+	t.Helper()
+	info, err := os.Stat(filepath.Join(dir, relPath))
+	if err != nil {
+		t.Fatalf("stat %s: %v", relPath, err)
+	}
+	if _, err := db.Exec(
+		`INSERT OR REPLACE INTO mcap_index (path, mod_time, size, start_time, end_time) VALUES (?, ?, ?, ?, ?)`,
+		relPath, info.ModTime().UTC().Format(time.RFC3339), info.Size(), startNs, endNs,
+	); err != nil {
+		t.Fatalf("seed index %s: %v", relPath, err)
+	}
+	if _, err := db.Exec(
+		`INSERT OR REPLACE INTO mcap_topics (path, topic, schema_name, message_encoding, message_count) VALUES (?, ?, ?, ?, ?)`,
+		relPath, topic, "cached.Schema", "json", 7,
+	); err != nil {
+		t.Fatalf("seed topics %s: %v", relPath, err)
+	}
+	return info.Size()
+}
+
 // callIndex invokes the handler and returns the parsed NDJSON stream.
 func callIndex(t *testing.T, absPath string, db *sql.DB, query string) []streamMsg {
 	t.Helper()
@@ -140,7 +163,7 @@ func TestMcapIndexStreamsCachedWithoutReading(t *testing.T) {
 	}
 	end := staleNs(t)
 	start := end - uint64(time.Minute.Nanoseconds())
-	seedCache(t, db, "a.mcap", "/cached/topic", start, end, 4242)
+	size := seedCacheForFile(t, db, dir, "a.mcap", "/cached/topic", start, end)
 
 	msgs := callIndex(t, dir, db, "")
 
@@ -155,8 +178,8 @@ func TestMcapIndexStreamsCachedWithoutReading(t *testing.T) {
 	if !ok {
 		t.Fatalf("cached file a.mcap was not emitted (it must come from cache, not a disk read): %+v", msgs)
 	}
-	if got.Size != 4242 {
-		t.Errorf("Size = %d, want cached 4242", got.Size)
+	if got.Size != size {
+		t.Errorf("Size = %d, want cached %d", got.Size, size)
 	}
 	if len(got.Topics) != 1 || got.Topics[0].Topic != "/cached/topic" {
 		t.Errorf("topics = %+v, want the cached /cached/topic", got.Topics)
@@ -209,7 +232,7 @@ func TestMcapIndexPurgesDeletedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	end := staleNs(t)
-	seedCache(t, db, "keep.mcap", "/keep", end-1000, end, 10)
+	seedCacheForFile(t, db, dir, "keep.mcap", "/keep", end-1000, end)
 
 	// gone.mcap: cached but absent on disk → purged. Seed all four tables.
 	seedCache(t, db, "gone.mcap", "/gone", end-1000, end, 20)
@@ -259,7 +282,7 @@ func TestMcapIndexRereadsLiveFileButTrustsSettled(t *testing.T) {
 		t.Fatal(err)
 	}
 	end := staleNs(t)
-	seedCache(t, db, "settled.mcap", "/settled", end-1000, end, 99)
+	settledSize := seedCacheForFile(t, db, dir, "settled.mcap", "/settled", end-1000, end)
 
 	files := filesByPath(callIndex(t, dir, db, ""))
 
@@ -275,7 +298,70 @@ func TestMcapIndexRereadsLiveFileButTrustsSettled(t *testing.T) {
 	if !ok {
 		t.Fatalf("settled.mcap not emitted (should be served from cache)")
 	}
-	if settled.Size != 99 || len(settled.Topics) != 1 || settled.Topics[0].Topic != "/settled" {
-		t.Errorf("settled.mcap = %+v, want cached size 99 / topic /settled (no re-read)", settled)
+	if settled.Size != settledSize || len(settled.Topics) != 1 || settled.Topics[0].Topic != "/settled" {
+		t.Errorf("settled.mcap = %+v, want cached size %d / topic /settled (no re-read)", settled, settledSize)
+	}
+}
+
+// Cached settled files stream newest-first (by end time), not in walk order —
+// so the timeline fills from the most recent recordings backwards.
+func TestMcapIndexEmitsNewestFirst(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestDB(t, dir)
+
+	base := staleNs(t)
+	hour := uint64(time.Hour.Nanoseconds())
+	minute := uint64(time.Minute.Nanoseconds())
+	// Alphabetical order equals age order, as with timestamped names on device.
+	names := []string{"2026-01-01.mcap", "2026-01-02.mcap", "2026-01-03.mcap"}
+	for i, name := range names {
+		start := base - uint64(3-i)*hour
+		writeTestMcap(t, filepath.Join(dir, name), "/t", start, start+minute)
+	}
+
+	callIndex(t, dir, db, "") // first pass populates the cache
+
+	var order []string
+	for _, m := range callIndex(t, dir, db, "") {
+		if m.File != nil {
+			order = append(order, m.File.Path)
+		}
+	}
+	want := []string{"2026-01-03.mcap", "2026-01-02.mcap", "2026-01-01.mcap"}
+	if len(order) != len(want) {
+		t.Fatalf("emitted %v, want %v", order, want)
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("emission order = %v, want newest-first %v", order, want)
+		}
+	}
+}
+
+// A cached settled file whose bytes changed on disk (size/mod-time mismatch)
+// is re-read instead of trusted, so replaced recordings can't serve stale data.
+func TestMcapIndexDetectsChangedFile(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestDB(t, dir)
+
+	end := staleNs(t)
+	start := end - uint64(time.Minute.Nanoseconds())
+	writeTestMcap(t, filepath.Join(dir, "c.mcap"), "/old", start, end)
+	callIndex(t, dir, db, "") // caches /old
+
+	// Replace the file: different topic (different size) and an earlier,
+	// still-settled time range.
+	newStart, newEnd := start-uint64(time.Hour.Nanoseconds()), end-uint64(time.Hour.Nanoseconds())
+	writeTestMcap(t, filepath.Join(dir, "c.mcap"), "/rewritten-longer-topic", newStart, newEnd)
+
+	got, ok := filesByPath(callIndex(t, dir, db, ""))["c.mcap"]
+	if !ok {
+		t.Fatalf("c.mcap not emitted")
+	}
+	if len(got.Topics) != 1 || got.Topics[0].Topic != "/rewritten-longer-topic" {
+		t.Errorf("topics = %+v, want the re-read /rewritten-longer-topic (stale cache served)", got.Topics)
+	}
+	if got.StartTime != float64(newStart)/1e9 {
+		t.Errorf("StartTime = %v, want re-read %v (stale cache served)", got.StartTime, float64(newStart)/1e9)
 	}
 }
