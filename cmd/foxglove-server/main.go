@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,6 +40,48 @@ import (
 
 //go:embed dist/*
 var staticFiles embed.FS
+
+// parseCgroupMemoryLimit parses the content of a cgroup memory-limit file.
+// Returns false for the "max"/unlimited sentinels and anything unparseable.
+func parseCgroupMemoryLimit(s string) (int64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "max" {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	// cgroup v1 reports "no limit" as PAGE_COUNTER_MAX (~2^63); treat any
+	// absurdly large value as unlimited.
+	if err != nil || n <= 0 || n >= 1<<60 {
+		return 0, false
+	}
+	return n, true
+}
+
+// applyCgroupMemoryLimit sets the Go soft memory limit to 90% of the container
+// memory cap so the GC works against the cgroup ceiling instead of the kernel
+// OOM-killing the process (observed on 192 MB-capped devices, where MCAP
+// scans of live recordings otherwise churn straight into the limit). No-op
+// outside a memory-limited cgroup or when GOMEMLIMIT is set explicitly.
+func applyCgroupMemoryLimit() {
+	if os.Getenv("GOMEMLIMIT") != "" {
+		return // the runtime already honors it
+	}
+	for _, path := range []string{
+		"/sys/fs/cgroup/memory.max",                   // cgroup v2
+		"/sys/fs/cgroup/memory/memory.limit_in_bytes", // cgroup v1
+	} {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if n, ok := parseCgroupMemoryLimit(string(b)); ok {
+			limit := n * 9 / 10
+			debug.SetMemoryLimit(limit)
+			log.Printf("Go memory limit set to %d MB (90%% of cgroup limit)", limit/(1<<20))
+		}
+		return
+	}
+}
 
 type McapFileInfo struct {
 	Name    string `json:"name"`
@@ -224,44 +267,57 @@ func getMcapTimeRangeFromChunks(path string) (startNs, endNs uint64, err error) 
 		return 0, 0, err
 	}
 	defer f.Close()
+	return chunkTimeRange(f)
+}
 
-	lexer, err := mcap.NewLexer(f, &mcap.LexerOptions{
-		EmitChunks: true,
-	})
-	if err != nil {
-		return 0, 0, fmt.Errorf("mcap lexer: %w", err)
+// chunkTimeRange walks MCAP record headers, reading only the 16 time-range
+// bytes of each chunk and seeking past every payload. The previous
+// implementation (mcap.Lexer with EmitChunks) allocated and read each whole
+// chunk to use those 16 bytes — on device that meant reading the entire
+// 100-320 MB in-progress file per listing and OOM-killing the container.
+// This reads a few KB regardless of file size.
+//
+// The caller has already validated the MCAP magic via mcap.NewReader, so the
+// leading 8 bytes are skipped without checking.
+func chunkTimeRange(r io.ReadSeeker) (startNs, endNs uint64, err error) {
+	if _, err := r.Seek(8, io.SeekStart); err != nil {
+		return 0, 0, err
 	}
-	defer lexer.Close()
 
+	var hdr [9]byte      // opcode + record length
+	var chunkHdr [16]byte // MessageStartTime + MessageEndTime
 	found := false
 	for {
-		token, data, err := lexer.Next(nil)
-		if err != nil {
+		if _, err := io.ReadFull(r, hdr[:]); err != nil {
 			break // EOF or truncated record — stop scanning
 		}
-		if token != mcap.TokenChunk {
-			continue
+		opcode := hdr[0]
+		recordLen := binary.LittleEndian.Uint64(hdr[1:9])
+		if recordLen > math.MaxInt64 {
+			break // corrupt length
 		}
-		// Chunk header: first 8 bytes = MessageStartTime, next 8 = MessageEndTime
-		if len(data) < 16 {
-			continue
-		}
-		chunkStart := binary.LittleEndian.Uint64(data[0:8])
-		chunkEnd := binary.LittleEndian.Uint64(data[8:16])
-		if chunkStart == 0 && chunkEnd == 0 {
-			continue
-		}
-		if !found {
-			startNs = chunkStart
-			endNs = chunkEnd
-			found = true
-		} else {
-			if chunkStart < startNs {
-				startNs = chunkStart
+		if opcode == byte(mcap.OpChunk) && recordLen >= 16 {
+			if _, err := io.ReadFull(r, chunkHdr[:]); err != nil {
+				break
 			}
-			if chunkEnd > endNs {
-				endNs = chunkEnd
+			recordLen -= 16
+			chunkStart := binary.LittleEndian.Uint64(chunkHdr[0:8])
+			chunkEnd := binary.LittleEndian.Uint64(chunkHdr[8:16])
+			if chunkStart != 0 || chunkEnd != 0 {
+				if !found {
+					startNs, endNs, found = chunkStart, chunkEnd, true
+				} else {
+					if chunkStart < startNs {
+						startNs = chunkStart
+					}
+					if chunkEnd > endNs {
+						endNs = chunkEnd
+					}
+				}
 			}
+		}
+		if _, err := r.Seek(int64(recordLen), io.SeekCurrent); err != nil {
+			break
 		}
 	}
 
@@ -302,17 +358,40 @@ func flattenJSON(prefix string, obj map[string]interface{}, out map[string]inter
 
 // indexFieldsForFile reads one message per jsonschema topic in an MCAP file
 // and caches field names/types in the SQLite database.
+// jsonTopicsToIndex returns the json-encoded topics worth scanning for field
+// names. Topics with a known message count of zero are skipped: the field scan
+// stops once it has seen one message per topic, so a topic with no messages
+// forces it through the entire file without ever finding one (observed on
+// device: camera files carry an always-empty json `trigger` topic, turning
+// every field-index pass into a full 100+ MB read). Counts of zero across the
+// board mean the statistics record is missing, i.e. counts are unknown — then
+// every json topic is kept.
+func jsonTopicsToIndex(topics []McapTopicInfo) []string {
+	haveCounts := false
+	for _, t := range topics {
+		if t.MessageCount > 0 {
+			haveCounts = true
+			break
+		}
+	}
+	var jsonTopics []string
+	for _, t := range topics {
+		if t.MessageEncoding != "json" && t.MessageEncoding != "jsonschema" {
+			continue
+		}
+		if haveCounts && t.MessageCount == 0 {
+			continue
+		}
+		jsonTopics = append(jsonTopics, t.Topic)
+	}
+	return jsonTopics
+}
+
 func indexFieldsForFile(db *sql.DB, filePath, absBasePath string, topics []McapTopicInfo) {
 	if db == nil {
 		return
 	}
-	// Filter to jsonschema topics only
-	var jsonTopics []string
-	for _, t := range topics {
-		if t.MessageEncoding == "json" || t.MessageEncoding == "jsonschema" {
-			jsonTopics = append(jsonTopics, t.Topic)
-		}
-	}
+	jsonTopics := jsonTopicsToIndex(topics)
 	if len(jsonTopics) == 0 {
 		return
 	}
@@ -338,18 +417,14 @@ func indexFieldsForFile(db *sql.DB, filePath, absBasePath string, topics []McapT
 		return
 	}
 
+	// Collect fields in memory first, then write in one short transaction.
+	// The previous version opened the transaction before iterating: after the
+	// first insert it held the SQLite write lock across all remaining file
+	// I/O, starving every other writer past their busy_timeout (observed as
+	// SQLITE_BUSY storms on device).
+	type fieldRow struct{ topic, name, fieldType string }
+	var fields []fieldRow
 	seen := make(map[string]bool) // track which topics we've already indexed
-	tx, txErr := db.Begin()
-	if txErr != nil {
-		return
-	}
-	stmt, stmtErr := tx.Prepare(`INSERT OR IGNORE INTO mcap_fields (file_path, topic, field_name, field_type) VALUES (?, ?, ?, ?)`)
-	if stmtErr != nil {
-		tx.Rollback()
-		return
-	}
-	defer stmt.Close()
-
 	for {
 		_, channel, msg, err := it.Next(nil)
 		if err != nil {
@@ -370,13 +445,30 @@ func indexFieldsForFile(db *sql.DB, filePath, absBasePath string, topics []McapT
 		for fieldName, fieldVal := range flat {
 			fieldType := classifyJSONValue(fieldVal)
 			if fieldType != "" {
-				stmt.Exec(filePath, channel.Topic, fieldName, fieldType)
+				fields = append(fields, fieldRow{channel.Topic, fieldName, fieldType})
 			}
 		}
 
 		if len(seen) >= len(jsonTopics) {
 			break
 		}
+	}
+	if len(fields) == 0 {
+		return
+	}
+
+	tx, txErr := db.Begin()
+	if txErr != nil {
+		return
+	}
+	stmt, stmtErr := tx.Prepare(`INSERT OR IGNORE INTO mcap_fields (file_path, topic, field_name, field_type) VALUES (?, ?, ?, ?)`)
+	if stmtErr != nil {
+		tx.Rollback()
+		return
+	}
+	defer stmt.Close()
+	for _, fr := range fields {
+		stmt.Exec(filePath, fr.topic, fr.name, fr.fieldType)
 	}
 	tx.Commit()
 }
@@ -748,6 +840,8 @@ func generateSelfSignedCert() (tls.Certificate, error) {
 }
 
 func main() {
+	applyCgroupMemoryLimit()
+
 	mcapPath := flag.String("mcap-path", "", "Directory containing MCAP files (enables file browser)")
 	downloadsPath := flag.String("downloads-path", "", "Directory containing desktop installer files (.dmg, .exe) to serve")
 	port := flag.Int("port", 8152, "HTTP server port")
