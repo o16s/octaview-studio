@@ -42,6 +42,7 @@ import isDesktopApp from "@foxglove/studio-base/util/isDesktopApp";
 import {
   AgentSettings,
   AutoUpdate,
+  BlockCacheSize,
   ColorSchemeSettings,
   LanguageSettings,
   LaunchDefault,
@@ -260,6 +261,7 @@ export function AppSettingsDialog(
               <TimezoneSettings />
               <TimeFormat orientation={smUp ? "horizontal" : "vertical"} />
               <MessageFramerate />
+              <BlockCacheSize />
               <LanguageSettings />
               {supportsAppUpdates && <AutoUpdate />}
               {!isDesktopApp() && <LaunchDefault />}

@@ -29,7 +29,10 @@ import PlayerSelectionContext, {
   PlayerSelection,
 } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import useIndexedDbRecents, { RecentRecord } from "@foxglove/studio-base/hooks/useIndexedDbRecents";
+import { AppSetting } from "@foxglove/studio-base/AppSetting";
+import { useAppConfigurationValue } from "@foxglove/studio-base/hooks/useAppConfigurationValue";
 import AnalyticsMetricsCollector from "@foxglove/studio-base/players/AnalyticsMetricsCollector";
+import { blockCacheSizeBytes } from "@foxglove/studio-base/players/IterablePlayer/blockCacheSize";
 import {
   TopicAliasFunctions,
   TopicAliasingPlayer,
@@ -81,6 +84,11 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
 
   const analytics = useAnalytics();
   const metricsCollector = useMemo(() => new AnalyticsMetricsCollector(analytics), [analytics]);
+
+  // Block-preload cache budget, user-tunable in Preferences. Applies to data
+  // sources opened after a change (players read it at construction).
+  const [blockCacheMb] = useAppConfigurationValue<number>(AppSetting.BLOCK_CACHE_SIZE_MB);
+  const cacheSizeBytes = blockCacheSizeBytes(blockCacheMb);
 
   const [basePlayer, setBasePlayer] = useState<Player | undefined>();
 
@@ -150,6 +158,7 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
       if (foundSource.type === "sample") {
         const newPlayer = foundSource.initialize({
           metricsCollector,
+          cacheSizeBytes,
         });
 
         setBasePlayer(newPlayer);
@@ -170,6 +179,7 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
             const newPlayer = foundSource.initialize({
               metricsCollector,
               params: args.params,
+              cacheSizeBytes,
             });
             setBasePlayer(newPlayer);
 
@@ -213,6 +223,7 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
                 file: multiFile ? undefined : file,
                 files: multiFile ? fileList : undefined,
                 metricsCollector,
+                cacheSizeBytes,
               });
 
               setBasePlayer(newPlayer);
@@ -240,6 +251,7 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
               const newPlayer = foundSource.initialize({
                 file,
                 metricsCollector,
+                cacheSizeBytes,
               });
 
               setBasePlayer(newPlayer);
@@ -266,7 +278,7 @@ export default function PlayerManager(props: PropsWithChildren<PlayerManagerProp
         enqueueSnackbar((error as Error).message, { variant: "error" });
       }
     },
-    [playerSources, metricsCollector, enqueueSnackbar, isMounted, addRecent],
+    [playerSources, metricsCollector, cacheSizeBytes, enqueueSnackbar, isMounted, addRecent],
   );
 
   // Select a recent entry by id

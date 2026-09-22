@@ -59,6 +59,7 @@ class McapServerDataSourceFactory implements IDataSourceFactory {
           source,
           name,
           sourceId: this.id,
+      cacheSizeBytes: args.cacheSizeBytes,
         });
       }
     }
@@ -94,6 +95,7 @@ class McapServerDataSourceFactory implements IDataSourceFactory {
       source,
       name,
       sourceId: this.id,
+      cacheSizeBytes: args.cacheSizeBytes,
     });
   }
 }

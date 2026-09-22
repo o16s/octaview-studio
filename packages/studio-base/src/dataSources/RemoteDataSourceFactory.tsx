@@ -78,6 +78,7 @@ class RemoteDataSourceFactory implements IDataSourceFactory {
     const source = new WorkerIterableSource({ initWorker, initArgs: { url } });
 
     return new IterablePlayer({
+      cacheSizeBytes: args.cacheSizeBytes,
       source,
       name: url,
       metricsCollector: args.metricsCollector,

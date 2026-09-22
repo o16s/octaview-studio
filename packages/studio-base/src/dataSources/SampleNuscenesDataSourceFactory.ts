@@ -37,6 +37,7 @@ class SampleNuscenesDataSourceFactory implements IDataSourceFactory {
     });
 
     return new IterablePlayer({
+      cacheSizeBytes: args.cacheSizeBytes,
       source,
       isSampleDataSource: true,
       name: "Adapted from nuScenes dataset. Copyright © 2020 nuScenes. https://www.nuscenes.org/terms-of-use",

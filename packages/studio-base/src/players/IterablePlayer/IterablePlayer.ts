@@ -90,6 +90,9 @@ type IterablePlayerOptions = {
 
   // Set to _false_ to disable preloading. (default: true)
   enablePreload?: boolean;
+
+  // Block-preload cache budget in bytes. (default: DEFAULT_CACHE_SIZE_BYTES)
+  cacheSizeBytes?: number;
 };
 
 type IterablePlayerState =
@@ -122,6 +125,7 @@ export class IterablePlayer implements Player {
   #start?: Time;
   #end?: Time;
   #enablePreload = true;
+  #cacheSizeBytes = DEFAULT_CACHE_SIZE_BYTES;
 
   // next read start time indicates where to start reading for the next tick
   // after a tick read, it is set to 1nsec past the end of the read operation (preparing for the next tick)
@@ -182,7 +186,8 @@ export class IterablePlayer implements Player {
   #resolveIsClosed: () => void = () => {};
 
   public constructor(options: IterablePlayerOptions) {
-    const { metricsCollector, urlParams, source, name, enablePreload, sourceId } = options;
+    const { metricsCollector, urlParams, source, name, enablePreload, sourceId, cacheSizeBytes } =
+      options;
 
     this.#iterableSource = source;
     this.#bufferedSource = new BufferedIterableSource(source);
@@ -191,6 +196,7 @@ export class IterablePlayer implements Player {
     this.#metricsCollector = metricsCollector ?? new NoopMetricsCollector();
     this.#metricsCollector.playerConstructed();
     this.#enablePreload = enablePreload ?? true;
+    this.#cacheSizeBytes = cacheSizeBytes ?? DEFAULT_CACHE_SIZE_BYTES;
     this.#sourceId = sourceId;
 
     this.isClosed = new Promise((resolveClose) => {
@@ -517,7 +523,7 @@ export class IterablePlayer implements Player {
         // --- setup block loader which loads messages for _full_ subscriptions in the "background"
         try {
           this.#blockLoader = new BlockLoader({
-            cacheSizeBytes: DEFAULT_CACHE_SIZE_BYTES,
+            cacheSizeBytes: this.#cacheSizeBytes,
             source: this.#iterableSource,
             start: this.#start,
             end: this.#end,

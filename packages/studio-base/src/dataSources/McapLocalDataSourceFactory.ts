@@ -44,6 +44,7 @@ class McapLocalDataSourceFactory implements IDataSourceFactory {
       source,
       name,
       sourceId: this.id,
+      cacheSizeBytes: args.cacheSizeBytes,
     });
   }
 }

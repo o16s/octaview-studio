@@ -43,6 +43,7 @@ class Ros2LocalBagDataSourceFactory implements IDataSourceFactory {
       source,
       name,
       sourceId: this.id,
+      cacheSizeBytes: args.cacheSizeBytes,
     });
   }
 }

@@ -32,6 +32,11 @@ import { makeStyles } from "tss-react/mui";
 import { filterMap } from "@foxglove/den/collection";
 import { AppSetting } from "@foxglove/studio-base/AppSetting";
 import OsContextSingleton from "@foxglove/studio-base/OsContextSingleton";
+import {
+  DEFAULT_BLOCK_CACHE_SIZE_MB,
+  MAX_BLOCK_CACHE_SIZE_MB,
+  MIN_BLOCK_CACHE_SIZE_MB,
+} from "@foxglove/studio-base/players/IterablePlayer/blockCacheSize";
 import Stack from "@foxglove/studio-base/components/Stack";
 import { useAppTimeFormat } from "@foxglove/studio-base/hooks";
 import { useAppConfigurationValue } from "@foxglove/studio-base/hooks/useAppConfigurationValue";
@@ -333,6 +338,29 @@ export function AutoUpdate(): React.ReactElement {
         label="Automatically install updates"
       />
     </>
+  );
+}
+
+export function BlockCacheSize(): React.ReactElement {
+  const [blockCacheMb, setBlockCacheMb] = useAppConfigurationValue<number>(
+    AppSetting.BLOCK_CACHE_SIZE_MB,
+  );
+
+  return (
+    <Stack>
+      <FormLabel>Preload cache size (MB):</FormLabel>
+      <TextField
+        fullWidth
+        type="number"
+        inputProps={{ min: MIN_BLOCK_CACHE_SIZE_MB, max: MAX_BLOCK_CACHE_SIZE_MB, step: 100 }}
+        value={blockCacheMb ?? DEFAULT_BLOCK_CACHE_SIZE_MB}
+        onChange={(event) => {
+          const value = Number(event.target.value);
+          void setBlockCacheMb(Number.isFinite(value) ? value : undefined);
+        }}
+        helperText="Memory budget for preloading plot history. Raise it if plots stop filling with a “cache is full” warning on large recordings; applies to newly opened data sources."
+      />
+    </Stack>
   );
 }
 

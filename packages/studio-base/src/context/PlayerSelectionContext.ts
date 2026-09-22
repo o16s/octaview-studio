@@ -13,6 +13,8 @@ export type DataSourceFactoryInitializeArgs = {
   file?: File;
   files?: File[];
   params?: Record<string, string | undefined>;
+  /** Block-preload cache budget in bytes (from the app's cache-size setting). */
+  cacheSizeBytes?: number;
 };
 
 export type DataSourceFactoryType = "file" | "connection" | "sample";
