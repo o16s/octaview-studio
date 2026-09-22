@@ -175,11 +175,10 @@ func TestIndexFieldsStillIndexesRealTopics(t *testing.T) {
 	}
 	indexFieldsForFile(db, "a.mcap", dir, topics)
 
-	rows := queryFieldTopics(t, db, "a.mcap")
-	if len(rows) != 0 {
-		// writeTestMcap messages are "{}" — no fields — so nothing to assert
-		// on content; this test only guards that the restructure still commits.
-		t.Logf("fields: %v", rows)
+	// writeTestMcap messages are "{}" and the zero-count trigger topic is
+	// skipped, so nothing may be indexed for this file.
+	if rows := queryFieldTopics(t, db, "a.mcap"); len(rows) != 0 {
+		t.Fatalf("fields for a.mcap = %v, want none ({} payloads, trigger has 0 messages)", rows)
 	}
 
 	// Now a file whose messages carry fields.

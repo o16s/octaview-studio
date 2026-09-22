@@ -131,6 +131,10 @@ function mergeSegments(
   const byFile = new Map<string, { timestamps: number[]; values: number[] }>();
   // Error segments (file unreadable / still recording) survive only while no
   // real data exists for that file.
+  // ponytail: within one dialog session a "still recording" band outlives the
+  // file settling — sparklineFetchedRanges never refetches a covered range, so
+  // real data only replaces the band after reopen/Refresh/pan. Add a live-file
+  // refetch timer if that ever matters.
   const errorsByFile = new Map<string, SparklineSegment>();
   for (const seg of [...existing, ...incoming]) {
     if (seg.error != undefined && (seg.timestamps?.length ?? 0) === 0) {

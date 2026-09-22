@@ -1675,6 +1675,12 @@ func main() {
 // liveWindowNs is the "still recording?" guard: a file whose last message lies
 // within this window of now may still be growing and is never trusted as
 // settled.
+//
+// ponytail: message times come from device clocks but are compared against
+// server wall-clock. A recorder running ahead keeps its files "live" (extra
+// re-reads, correct data); one running behind is judged settled early, which
+// the stat gate's size/mtime comparison then covers. Net effect of skew is
+// wasted reads, not stale data.
 const liveWindowNs uint64 = 5 * 60 * 1e9 // 5 minutes
 
 // mcapSampleHandler serves decimated per-file time series for one field:
@@ -2061,6 +2067,8 @@ func mcapIndexHandler(absPath string, indexDB *sql.DB, indexScanWorkers int) htt
 				purgeCacheEntry(indexDB, relPath)
 				continue
 			}
+			// ponytail: RFC3339 is second-granular, so a same-second rewrite at
+			// identical size evades this gate; store mtime in ns if that ever bites.
 			changed := info.Size() != ce.size ||
 				info.ModTime().UTC().Format(time.RFC3339) != ce.modTime
 			if changed || ce.endNs+liveWindowNs >= nowNs {
