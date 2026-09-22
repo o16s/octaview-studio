@@ -19,6 +19,7 @@ import {
 import { Immutable, MessageEvent } from "@foxglove/studio";
 import { IteratorCursor } from "@foxglove/studio-base/players/IterablePlayer/IteratorCursor";
 import PlayerProblemManager from "@foxglove/studio-base/players/PlayerProblemManager";
+import { perfStats } from "@foxglove/studio-base/util/perfStats";
 import { MessageBlock, Progress, TopicSelection } from "@foxglove/studio-base/players/types";
 
 import { IIterableSource, MessageIteratorArgs } from "./IIterableSource";
@@ -93,6 +94,8 @@ export class BlockLoader {
 
     this.#abortController.abort();
     this.#activeChangeCondvar.notifyAll();
+    // Frequent aborts = subscription churn repeatedly restarting preload.
+    perfStats.count("blocks.abort");
     log.debug(`Preloaded topics: ${Array.from(topics.keys()).join(", ")}`);
 
     // Update all the blocks with any missing topics
@@ -330,6 +333,7 @@ export class BlockLoader {
           const removedSize = this.#removeUnusedBlockTopics();
           totalBlockSizeBytes -= removedSize;
           if (totalBlockSizeBytes > this.#maxCacheSize) {
+            perfStats.count("blocks.cacheFull");
             this.#problemManager.addProblem("cache-full", {
               severity: "error",
               message: `Cache is full. Preloading for topics [${Array.from(
@@ -381,6 +385,15 @@ export class BlockLoader {
   }
 
   #calculateProgress(topics: TopicSelection, currentCacheSize: number): Progress {
+    // Preload health: loaded/total blocks and cache bytes. A loaded count that
+    // stalls below total while playback runs is the "plots never fill" state.
+    perfStats.gauge("blocks.total", this.#blocks.length);
+    perfStats.gauge(
+      "blocks.loaded",
+      this.#blocks.reduce((n, b) => (b != undefined && b.needTopics.size === 0 ? n + 1 : n), 0),
+    );
+    perfStats.gauge("blocks.cacheMB", Math.round(currentCacheSize / 1e6));
+
     const fullyLoadedFractionRanges = simplify(
       filterMap(this.#blocks, (thisBlock, blockIndex) => {
         if (!thisBlock) {

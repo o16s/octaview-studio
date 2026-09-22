@@ -17,6 +17,7 @@ import { Filelike } from "@foxglove/rosbag";
 
 import VirtualLRUBuffer from "./VirtualLRUBuffer";
 import { getNewConnection } from "./getNewConnection";
+import { perfStats } from "./perfStats";
 import { Range } from "./ranges";
 
 // CachedFilelike is a `Filelike` that attempts to do as much caching of the file in memory as
@@ -150,6 +151,7 @@ export default class CachedFilelike implements Filelike {
     if (length === 0) {
       return Promise.resolve(new Uint8Array());
     }
+    perfStats.count("mcapCache.readBytesMB", length / 1e6);
 
     const range = { start: offset, end: offset + length };
 
@@ -231,6 +233,10 @@ export default class CachedFilelike implements Filelike {
     }
 
     // Start the stream, and update the current connection state.
+    // fetchBytes climbing far past readBytes = the cache is too small for the
+    // access pattern and the same ranges are being re-downloaded (thrash).
+    perfStats.count("mcapCache.fetches");
+    perfStats.count("mcapCache.fetchBytesMB", (range.end - range.start) / 1e6);
     const stream = this.#fileReader.fetch(range.start, range.end - range.start);
     this.#currentConnection = { stream, remainingRange: range };
 

@@ -17,6 +17,7 @@ import { StoreApi, useStore } from "zustand";
 import { useGuaranteedContext } from "@foxglove/hooks";
 import { Immutable } from "@foxglove/studio";
 import { AppSetting } from "@foxglove/studio-base/AppSetting";
+import { perfStats } from "@foxglove/studio-base/util/perfStats";
 import CurrentLayoutContext, {
   LayoutState,
 } from "@foxglove/studio-base/context/CurrentLayoutContext";
@@ -294,6 +295,12 @@ function createPlayerListener(args: {
       // Compute how much time remains before this frame is done
       const delta = Date.now() - start;
       const frameTime = Math.max(0, msPerFrameRef.current - delta);
+
+      // Emits per interval = the real playback fps every panel rides on;
+      // renderMs = main-thread cost of one emit across ALL panels.
+      perfStats.count("pipeline.emits");
+      perfStats.count("pipeline.renderMsSum", delta);
+      perfStats.max("pipeline.renderMsMax", delta);
 
       // Panels have the remaining frame time to invoke pause
       setTimeout(async () => {

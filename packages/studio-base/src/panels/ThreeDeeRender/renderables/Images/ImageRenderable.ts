@@ -18,6 +18,8 @@ import { projectPixel } from "@foxglove/studio-base/panels/ThreeDeeRender/render
 import { RosValue } from "@foxglove/studio-base/players/types";
 
 import { AnyImage } from "./ImageTypes";
+import { perfStats } from "@foxglove/studio-base/util/perfStats";
+
 import { H264Decoder, NoFrameError, isVideoFormat, containsKeyframe } from "./H264Decoder";
 import { decodeCompressedImageToBitmap } from "./decodeImage";
 import { CameraInfo } from "../../ros";
@@ -302,6 +304,12 @@ export class ImageRenderable extends Renderable<ImageUserData> {
 
     this.#primingInProgress = true;
 
+    // Full-GOP re-decode: frequent re-primes during steady playback mean the
+    // stream is losing continuity (dropped reference frames) — the collapse loop.
+    perfStats.count("video.reprime");
+    perfStats.count("video.reprimeFrames", topicMessages.length);
+    const primeStartMs = performance.now();
+
     // Create a fresh decoder for priming to avoid corrupting the main decoder state
     const primingDecoder = new H264Decoder();
     let lastBitmap: ImageBitmap | undefined;
@@ -326,6 +334,7 @@ export class ImageRenderable extends Renderable<ImageUserData> {
       }
 
       primingDecoder.close();
+      perfStats.count("video.reprimeMs", performance.now() - primeStartMs);
 
       if (this.isDisposed() || lastBitmap == undefined) {
         lastBitmap?.close();

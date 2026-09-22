@@ -2,6 +2,8 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+import { perfStats } from "@foxglove/studio-base/util/perfStats";
+
 const VIDEO_FORMATS = new Set(["h264"]);
 
 /** Returns true if the given format string is a video codec handled by H264Decoder. */
@@ -147,6 +149,11 @@ export class H264Decoder {
 
     const timestampMicros = Number(timestampNanos / 1000n);
 
+    // A queue that keeps growing means the decoder can't keep up (software
+    // decode / too many concurrent streams) — the definitive slowness signal.
+    perfStats.count("video.framesIn");
+    perfStats.max("video.queueMax", this.#decoder.decodeQueueSize);
+
     return new Promise<ImageBitmap>((resolve, reject) => {
       this.#pendingFrames.push({ resolve, reject });
 
@@ -191,6 +198,7 @@ export class H264Decoder {
           frame.close();
           return;
         }
+        perfStats.count("video.framesOut");
         createImageBitmap(frame)
           .then((bitmap) => {
             frame.close();
@@ -205,6 +213,7 @@ export class H264Decoder {
         if (this.#decoder !== decoder) {
           return;
         }
+        perfStats.count("video.decodeErrors");
         this.#rejectAllPending(err.message);
         // WebCodecs closes the decoder on error. Reset state so the decoder
         // can recover automatically when the next keyframe with SPS arrives.
