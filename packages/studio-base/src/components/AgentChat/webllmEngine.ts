@@ -71,7 +71,7 @@ export async function initWebLLMEngine(
   const promise = (async () => {
     const { CreateMLCEngine } = await import("@mlc-ai/web-llm");
     const chatOpts =
-      contextSize != undefined && contextSize !== 0
+      contextSize != undefined && Number.isFinite(contextSize) && contextSize !== 0
         ? { context_window_size: contextSize }
         : undefined;
     const engine = (await CreateMLCEngine(
