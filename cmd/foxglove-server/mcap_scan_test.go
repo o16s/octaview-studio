@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/foxglove/mcap/go/mcap"
 )
@@ -231,6 +232,78 @@ func queryFieldTopics(t *testing.T, db *sql.DB, path string) []string {
 		out = append(out, f)
 	}
 	return out
+}
+
+func TestCacheSamplesBatchInserts(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestDB(t, dir)
+
+	// More rows than one insert batch, with recognizable values.
+	n := 1200
+	ts := make([]float64, n)
+	vals := make([]float64, n)
+	for i := 0; i < n; i++ {
+		ts[i] = float64(i)
+		vals[i] = float64(i) * 2
+	}
+	cacheSamples(db, "f.mcap", "plc/tags", "temp", 10, ts, vals)
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM mcap_samples WHERE file_path = 'f.mcap'`).Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != n {
+		t.Fatalf("cached %d rows, want %d", count, n)
+	}
+	var v float64
+	if err := db.QueryRow(
+		`SELECT value FROM mcap_samples WHERE file_path = 'f.mcap' AND timestamp_ns = ?`, int64(777*1e9),
+	).Scan(&v); err != nil {
+		t.Fatalf("lookup row 777: %v", err)
+	}
+	if v != 1554 {
+		t.Errorf("value = %v, want 1554", v)
+	}
+}
+
+func TestCacheSamplesWaitsForWriteMutex(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestDB(t, dir)
+
+	indexDBWriteMu.Lock()
+	done := make(chan struct{})
+	go func() {
+		cacheSamples(db, "g.mcap", "plc/tags", "temp", 10, []float64{1}, []float64{2})
+		close(done)
+	}()
+
+	// While the mutex is held, the write must not have happened.
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-done:
+		t.Fatal("cacheSamples completed while the write mutex was held")
+	default:
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM mcap_samples WHERE file_path = 'g.mcap'`).Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("wrote %d rows while mutex held", count)
+	}
+
+	indexDBWriteMu.Unlock()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cacheSamples never completed after mutex release")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM mcap_samples WHERE file_path = 'g.mcap'`).Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("rows = %d, want 1", count)
+	}
 }
 
 func TestParseCgroupMemoryLimit(t *testing.T) {

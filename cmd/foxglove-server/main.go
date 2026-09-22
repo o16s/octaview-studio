@@ -41,6 +41,50 @@ import (
 //go:embed dist/*
 var staticFiles embed.FS
 
+// indexDBWriteMu serializes all writes to the index database. This process is
+// the database's only writer, but SQLite's busy-wait is not a fair queue:
+// under sustained contention (16 index workers + sample caching on slow eMMC)
+// a waiting writer can starve past any busy_timeout while competitors keep
+// winning the lock, surfacing as SQLITE_BUSY despite no single long hold.
+// Queueing on a Go mutex is fair and makes lock errors impossible. Hold it
+// only around statements/transactions — never across file I/O.
+var indexDBWriteMu sync.Mutex
+
+// cacheSamples stores decimated samples for one (file, topic, field,
+// decimation) in a single short transaction, inserting multi-row batches.
+// The previous per-row Prepare/Exec loop issued ~10k statements per call,
+// holding the write lock for seconds on device.
+func cacheSamples(db *sql.DB, filePath, topic, field string, decimation int, ts, vals []float64) {
+	if db == nil || len(ts) == 0 {
+		return
+	}
+	indexDBWriteMu.Lock()
+	defer indexDBWriteMu.Unlock()
+	tx, err := db.Begin()
+	if err != nil {
+		return
+	}
+	const batch = 400 // 6 bind variables per row, comfortably under SQLite limits
+	for i := 0; i < len(ts); i += batch {
+		end := min(i+batch, len(ts))
+		var sb strings.Builder
+		sb.WriteString(`INSERT OR IGNORE INTO mcap_samples (file_path, topic, field, decimation, timestamp_ns, value) VALUES `)
+		args := make([]interface{}, 0, (end-i)*6)
+		for j := i; j < end; j++ {
+			if j > i {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(`(?, ?, ?, ?, ?, ?)`)
+			args = append(args, filePath, topic, field, decimation, int64(ts[j]*1e9), vals[j])
+		}
+		if _, err := tx.Exec(sb.String(), args...); err != nil {
+			tx.Rollback()
+			return
+		}
+	}
+	tx.Commit()
+}
+
 // parseCgroupMemoryLimit parses the content of a cgroup memory-limit file.
 // Returns false for the "max"/unlimited sentinels and anything unparseable.
 func parseCgroupMemoryLimit(s string) (int64, bool) {
@@ -457,6 +501,8 @@ func indexFieldsForFile(db *sql.DB, filePath, absBasePath string, topics []McapT
 		return
 	}
 
+	indexDBWriteMu.Lock()
+	defer indexDBWriteMu.Unlock()
 	tx, txErr := db.Begin()
 	if txErr != nil {
 		return
@@ -620,23 +666,7 @@ func sampleFieldFromFile(
 		allVals = append(allVals, val)
 	}
 
-	// Cache results in SQLite
-	if db != nil && len(allTs) > 0 {
-		tx, txErr := db.Begin()
-		if txErr == nil {
-			stmt, stmtErr := tx.Prepare(
-				`INSERT OR IGNORE INTO mcap_samples (file_path, topic, field, decimation, timestamp_ns, value) VALUES (?, ?, ?, ?, ?, ?)`,
-			)
-			if stmtErr == nil {
-				for i, ts := range allTs {
-					tsNs := int64(ts * 1e9)
-					stmt.Exec(filePath, topic, field, decimation, tsNs, allVals[i])
-				}
-				stmt.Close()
-			}
-			tx.Commit()
-		}
-	}
+	cacheSamples(db, filePath, topic, field, decimation, allTs, allVals)
 
 	return allTs, allVals, nil
 }
@@ -1918,6 +1948,7 @@ func mcapIndexHandler(absPath string, indexDB *sql.DB, indexScanWorkers int) htt
 			startNs, endNs, topics := summary.startNs, summary.endNs, summary.topics
 			if indexDB != nil {
 				modTimeStr := info.ModTime().UTC().Format(time.RFC3339)
+				indexDBWriteMu.Lock()
 				if _, e := indexDB.Exec(
 					`INSERT OR REPLACE INTO mcap_index (path, mod_time, size, start_time, end_time) VALUES (?, ?, ?, ?, ?)`,
 					relPath, modTimeStr, info.Size(), startNs, endNs,
@@ -1931,6 +1962,8 @@ func mcapIndexHandler(absPath string, indexDB *sql.DB, indexScanWorkers int) htt
 						relPath, ti.Topic, ti.SchemaName, ti.MessageEncoding, ti.MessageCount,
 					)
 				}
+				indexDBWriteMu.Unlock()
+				// Reads the file; takes the write mutex itself for its final tx.
 				indexFieldsForFile(indexDB, relPath, absPath, topics)
 			}
 			if !passesFilter(startNs, endNs) {
@@ -2054,10 +2087,13 @@ func mcapIndexHandler(absPath string, indexDB *sql.DB, indexScanWorkers int) htt
 			}
 			rows.Close()
 			for _, p := range stalePaths {
+				// Per-path locking so a long cleanup doesn't block other writers.
+				indexDBWriteMu.Lock()
 				indexDB.Exec(`DELETE FROM mcap_index WHERE path = ?`, p)
 				indexDB.Exec(`DELETE FROM mcap_topics WHERE path = ?`, p)
 				indexDB.Exec(`DELETE FROM mcap_fields WHERE file_path = ?`, p)
 				indexDB.Exec(`DELETE FROM mcap_samples WHERE file_path = ?`, p)
+				indexDBWriteMu.Unlock()
 			}
 		}
 
