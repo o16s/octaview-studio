@@ -1,6 +1,6 @@
 {
   "name": "octaview-studio-desktop",
-  "version": "1.99.1",
+  "version": "1.99.2",
   "description": "octaview Studio desktop application",
   "main": "main.js",
   "private": true,
