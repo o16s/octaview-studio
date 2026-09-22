@@ -757,7 +757,13 @@ func main() {
 	authToken := flag.String("token", "", "Authentication token (like Jupyter). If set, requires ?token=<value> on first visit. Stored in a browser cookie.")
 	generateToken := flag.Bool("generate-token", false, "Auto-generate a random authentication token and print the URL")
 	basePathFlag := flag.String("base-path", "", "Serve under a reverse-proxy path prefix (e.g. /svc/octaview-studio). When unset, the X-Forwarded-Prefix header is honoured instead.")
+	indexScanWorkersFlag := flag.Int("index-scan-workers", 16, "Concurrent workers used to read new/changed MCAP files during an index scan. Higher values hide per-file latency on networked mounts; too many can exhaust NFS RPC slots. Cached files are served without any read.")
 	flag.Parse()
+
+	indexScanWorkers := *indexScanWorkersFlag
+	if indexScanWorkers < 1 {
+		indexScanWorkers = 1
+	}
 
 	basePath := normalizePrefix(*basePathFlag)
 	if *basePathFlag != "" && basePath == "" {
@@ -820,885 +826,682 @@ func main() {
 	mux := http.NewServeMux()
 
 	if absPath != "" {
-	// API: list MCAP files
-	mux.HandleFunc("/api/mcap/files", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
+		// API: list MCAP files
+		mux.HandleFunc("/api/mcap/files", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
 
-		var files []McapFileInfo
-		err := filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				log.Printf("Warning: could not access %s: %v", path, err)
+			var files []McapFileInfo
+			err := filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
+				if err != nil {
+					log.Printf("Warning: could not access %s: %v", path, err)
+					return nil
+				}
+				if d.IsDir() {
+					return nil
+				}
+				if !strings.HasSuffix(strings.ToLower(d.Name()), ".mcap") {
+					return nil
+				}
+				info, err := d.Info()
+				if err != nil {
+					return nil
+				}
+				relPath, _ := filepath.Rel(absPath, path)
+				files = append(files, McapFileInfo{
+					Name:    d.Name(),
+					Path:    relPath,
+					Size:    info.Size(),
+					ModTime: info.ModTime().UTC().Format(time.RFC3339),
+				})
 				return nil
-			}
-			if d.IsDir() {
-				return nil
-			}
-			if !strings.HasSuffix(strings.ToLower(d.Name()), ".mcap") {
-				return nil
-			}
-			info, err := d.Info()
-			if err != nil {
-				return nil
-			}
-			relPath, _ := filepath.Rel(absPath, path)
-			files = append(files, McapFileInfo{
-				Name:    d.Name(),
-				Path:    relPath,
-				Size:    info.Size(),
-				ModTime: info.ModTime().UTC().Format(time.RFC3339),
 			})
-			return nil
-		})
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if files == nil {
-			files = []McapFileInfo{}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		json.NewEncoder(w).Encode(files)
-	})
-
-	// API: serve individual MCAP file (supports range requests)
-	mux.HandleFunc("/api/mcap/files/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Range")
-			w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified")
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// Same resolution as the archive endpoint, so the confinement check
-		// exists once rather than twice (see archive.go).
-		fullPath, _, ok := resolveMcapPath(absPath, strings.TrimPrefix(r.URL.Path, "/api/mcap/files/"))
-		if !ok {
-			http.Error(w, "Invalid path", http.StatusBadRequest)
-			return
-		}
-
-		f, err := os.Open(fullPath)
-		if err != nil {
-			http.Error(w, "File not found", http.StatusNotFound)
-			return
-		}
-		defer f.Close()
-
-		stat, err := f.Stat()
-		if err != nil {
-			http.Error(w, "File not found", http.StatusNotFound)
-			return
-		}
-
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified")
-		// http.ServeContent handles Range requests, Content-Length, and Accept-Ranges automatically
-		http.ServeContent(w, r, stat.Name(), stat.ModTime(), f)
-	})
-
-	// API: download several recordings as one zip, built and streamed here
-	mux.HandleFunc("/api/mcap/archive", archiveHandler(absPath))
-
-	// API: list topics in an MCAP file
-	mux.HandleFunc("/api/mcap/topics/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		relPath := strings.TrimPrefix(r.URL.Path, "/api/mcap/topics/")
-		if relPath == "" {
-			http.Error(w, "Missing file path", http.StatusBadRequest)
-			return
-		}
-		relPath = strings.TrimPrefix(relPath, absPath)
-		relPath = strings.TrimPrefix(relPath, "/")
-		cleanPath := filepath.Clean(relPath)
-		if strings.Contains(cleanPath, "..") {
-			http.Error(w, "Invalid path", http.StatusBadRequest)
-			return
-		}
-		fullPath := filepath.Join(absPath, cleanPath)
-		if !strings.HasPrefix(fullPath, absPath) {
-			http.Error(w, "Invalid path", http.StatusBadRequest)
-			return
-		}
-
-		f, err := os.Open(fullPath)
-		if err != nil {
-			http.Error(w, "File not found", http.StatusNotFound)
-			return
-		}
-		defer f.Close()
-
-		reader, err := mcap.NewReader(f)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to open MCAP: %v", err), http.StatusInternalServerError)
-			return
-		}
-		defer reader.Close()
-
-		type TopicInfo struct {
-			Topic           string `json:"topic"`
-			SchemaName      string `json:"schemaName"`
-			MessageEncoding string `json:"messageEncoding"`
-			MessageCount    uint64 `json:"messageCount,omitempty"`
-		}
-
-		var topics []TopicInfo
-
-		// Try the summary section first (O(1) for complete files)
-		info, infoErr := reader.Info()
-		if infoErr == nil {
-			for _, ch := range info.Channels {
-				ti := TopicInfo{
-					Topic:           ch.Topic,
-					MessageEncoding: ch.MessageEncoding,
-				}
-				if schema, ok := info.Schemas[ch.SchemaID]; ok {
-					ti.SchemaName = schema.Name
-				}
-				if info.Statistics != nil {
-					ti.MessageCount = info.Statistics.ChannelMessageCounts[ch.ID]
-				}
-				topics = append(topics, ti)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
 			}
-		} else {
-			// Fallback for in-progress files: scan records from the start.
-			// Re-open file since the reader consumed some data.
-			f.Seek(0, io.SeekStart)
-			fallbackReader, err := mcap.NewReader(f)
+			if files == nil {
+				files = []McapFileInfo{}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			json.NewEncoder(w).Encode(files)
+		})
+
+		// API: serve individual MCAP file (supports range requests)
+		mux.HandleFunc("/api/mcap/files/", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodOptions {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Range")
+				w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified")
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			// Same resolution as the archive endpoint, so the confinement check
+			// exists once rather than twice (see archive.go).
+			fullPath, _, ok := resolveMcapPath(absPath, strings.TrimPrefix(r.URL.Path, "/api/mcap/files/"))
+			if !ok {
+				http.Error(w, "Invalid path", http.StatusBadRequest)
+				return
+			}
+
+			f, err := os.Open(fullPath)
+			if err != nil {
+				http.Error(w, "File not found", http.StatusNotFound)
+				return
+			}
+			defer f.Close()
+
+			stat, err := f.Stat()
+			if err != nil {
+				http.Error(w, "File not found", http.StatusNotFound)
+				return
+			}
+
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified")
+			// http.ServeContent handles Range requests, Content-Length, and Accept-Ranges automatically
+			http.ServeContent(w, r, stat.Name(), stat.ModTime(), f)
+		})
+
+		// API: download several recordings as one zip, built and streamed here
+		mux.HandleFunc("/api/mcap/archive", archiveHandler(absPath))
+
+		// API: list topics in an MCAP file
+		mux.HandleFunc("/api/mcap/topics/", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			relPath := strings.TrimPrefix(r.URL.Path, "/api/mcap/topics/")
+			if relPath == "" {
+				http.Error(w, "Missing file path", http.StatusBadRequest)
+				return
+			}
+			relPath = strings.TrimPrefix(relPath, absPath)
+			relPath = strings.TrimPrefix(relPath, "/")
+			cleanPath := filepath.Clean(relPath)
+			if strings.Contains(cleanPath, "..") {
+				http.Error(w, "Invalid path", http.StatusBadRequest)
+				return
+			}
+			fullPath := filepath.Join(absPath, cleanPath)
+			if !strings.HasPrefix(fullPath, absPath) {
+				http.Error(w, "Invalid path", http.StatusBadRequest)
+				return
+			}
+
+			f, err := os.Open(fullPath)
+			if err != nil {
+				http.Error(w, "File not found", http.StatusNotFound)
+				return
+			}
+			defer f.Close()
+
+			reader, err := mcap.NewReader(f)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("Failed to open MCAP: %v", err), http.StatusInternalServerError)
 				return
 			}
-			defer fallbackReader.Close()
+			defer reader.Close()
 
-			schemas := make(map[uint16]*mcap.Schema)
-			seen := make(map[uint16]bool)
-			it, err := fallbackReader.Messages(mcap.UsingIndex(false))
-			if err != nil {
-				http.Error(w, fmt.Sprintf("Failed to read MCAP: %v", err), http.StatusInternalServerError)
-				return
+			type TopicInfo struct {
+				Topic           string `json:"topic"`
+				SchemaName      string `json:"schemaName"`
+				MessageEncoding string `json:"messageEncoding"`
+				MessageCount    uint64 `json:"messageCount,omitempty"`
 			}
-			for {
-				schema, channel, _, err := it.Next(nil)
-				if err != nil {
-					break
-				}
-				if schema != nil {
-					schemas[schema.ID] = schema
-				}
-				if channel != nil && !seen[channel.ID] {
-					seen[channel.ID] = true
+
+			var topics []TopicInfo
+
+			// Try the summary section first (O(1) for complete files)
+			info, infoErr := reader.Info()
+			if infoErr == nil {
+				for _, ch := range info.Channels {
 					ti := TopicInfo{
-						Topic:           channel.Topic,
-						MessageEncoding: channel.MessageEncoding,
+						Topic:           ch.Topic,
+						MessageEncoding: ch.MessageEncoding,
 					}
-					if s, ok := schemas[channel.SchemaID]; ok {
-						ti.SchemaName = s.Name
+					if schema, ok := info.Schemas[ch.SchemaID]; ok {
+						ti.SchemaName = schema.Name
+					}
+					if info.Statistics != nil {
+						ti.MessageCount = info.Statistics.ChannelMessageCounts[ch.ID]
 					}
 					topics = append(topics, ti)
 				}
+			} else {
+				// Fallback for in-progress files: scan records from the start.
+				// Re-open file since the reader consumed some data.
+				f.Seek(0, io.SeekStart)
+				fallbackReader, err := mcap.NewReader(f)
+				if err != nil {
+					http.Error(w, fmt.Sprintf("Failed to open MCAP: %v", err), http.StatusInternalServerError)
+					return
+				}
+				defer fallbackReader.Close()
+
+				schemas := make(map[uint16]*mcap.Schema)
+				seen := make(map[uint16]bool)
+				it, err := fallbackReader.Messages(mcap.UsingIndex(false))
+				if err != nil {
+					http.Error(w, fmt.Sprintf("Failed to read MCAP: %v", err), http.StatusInternalServerError)
+					return
+				}
+				for {
+					schema, channel, _, err := it.Next(nil)
+					if err != nil {
+						break
+					}
+					if schema != nil {
+						schemas[schema.ID] = schema
+					}
+					if channel != nil && !seen[channel.ID] {
+						seen[channel.ID] = true
+						ti := TopicInfo{
+							Topic:           channel.Topic,
+							MessageEncoding: channel.MessageEncoding,
+						}
+						if s, ok := schemas[channel.SchemaID]; ok {
+							ti.SchemaName = s.Name
+						}
+						topics = append(topics, ti)
+					}
+				}
 			}
-		}
 
-		if topics == nil {
-			topics = []TopicInfo{}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		json.NewEncoder(w).Encode(topics)
-	})
-
-	// API: index MCAP files — streams NDJSON for progressive loading.
-	// Line 1: {"total": N}          — count of .mcap files found
-	// Lines:  {"file": {...}}        — one per indexed file
-	// Last:   {"done": true}
-	mux.HandleFunc("/api/mcap/index", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Cache-Control", "no-cache")
-
-		// Optional time-range filter: only return files overlapping [filterStartNs, filterEndNs]
-		var filterStartNs, filterEndNs uint64
-		hasFilter := false
-		if s := r.URL.Query().Get("start"); s != "" {
-			sec, err := strconv.ParseFloat(s, 64)
-			if err != nil {
-				http.Error(w, "Invalid 'start' parameter", http.StatusBadRequest)
-				return
+			if topics == nil {
+				topics = []TopicInfo{}
 			}
-			filterStartNs = uint64(sec * 1e9)
-			hasFilter = true
-		}
-		if s := r.URL.Query().Get("end"); s != "" {
-			sec, err := strconv.ParseFloat(s, 64)
-			if err != nil {
-				http.Error(w, "Invalid 'end' parameter", http.StatusBadRequest)
-				return
-			}
-			filterEndNs = uint64(sec * 1e9)
-			hasFilter = true
-		}
 
-		enc := json.NewEncoder(w)
-
-		// Stop touching the disk when the client goes away (tab closed / request
-		// abandoned) instead of walking the whole tree anyway.
-		done := r.Context().Done()
-
-		// Phase 1: quick walk to count .mcap files
-		type mcapEntry struct {
-			path    string
-			relPath string
-			info    os.FileInfo
-		}
-		var entries []mcapEntry
-		filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
-			select {
-			case <-done:
-				return filepath.SkipAll
-			default:
-			}
-			if err != nil {
-				return nil
-			}
-			if d.IsDir() || !strings.HasSuffix(strings.ToLower(d.Name()), ".mcap") {
-				return nil
-			}
-			info, err := d.Info()
-			if err != nil {
-				return nil
-			}
-			relPath, _ := filepath.Rel(absPath, path)
-			entries = append(entries, mcapEntry{path: path, relPath: relPath, info: info})
-			return nil
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			json.NewEncoder(w).Encode(topics)
 		})
 
-		if r.Context().Err() != nil {
-			return
-		}
+		// API: index MCAP files — streams NDJSON for progressive loading.
+		// Line 1: {"total": N}          — cached recording count (first byte, no disk walk)
+		// Lines:  {"file": {...}}        — one per recording (cached first, then new/growing)
+		// Last:   {"done": true}
+		mux.HandleFunc("/api/mcap/index", mcapIndexHandler(absPath, indexDB, indexScanWorkers))
 
-		enc.Encode(map[string]int{"total": len(entries)})
-		flusher.Flush()
-
-		// Phase 2: index each file and stream results
-		seenPaths := make(map[string]struct{}, len(entries))
-		for _, entry := range entries {
-			// Bail out if the client disconnected. Returning here also skips the
-			// Phase 3 stale-cleanup below — which is required: seenPaths is only
-			// partial on an aborted walk, so running cleanup would delete cache
-			// rows for files not yet visited.
-			select {
-			case <-done:
-				return
-			default:
-			}
-			seenPaths[entry.relPath] = struct{}{}
-			modTimeStr := entry.info.ModTime().UTC().Format(time.RFC3339)
-
-			var startNs, endNs uint64
-			var topics []McapTopicInfo
-			cacheHit := false
-			if indexDB != nil {
-				err := indexDB.QueryRow(
-					`SELECT start_time, end_time FROM mcap_index WHERE path = ? AND mod_time = ? AND size = ?`,
-					entry.relPath, modTimeStr, entry.info.Size(),
-				).Scan(&startNs, &endNs)
-				if err == nil {
-					cacheHit = true
-					// Load cached topics
-					if tRows, tErr := indexDB.Query(
-						`SELECT topic, schema_name, message_encoding, message_count FROM mcap_topics WHERE path = ?`,
-						entry.relPath,
-					); tErr == nil {
-						for tRows.Next() {
-							var ti McapTopicInfo
-							if tRows.Scan(&ti.Topic, &ti.SchemaName, &ti.MessageEncoding, &ti.MessageCount) == nil {
-								topics = append(topics, ti)
-							}
-						}
-						tRows.Close()
-					}
-				}
-			}
-
-			if !cacheHit {
-				summary, indexErr := getMcapSummary(entry.path)
-				if indexErr != nil {
-					log.Printf("Warning: could not index %s: %v", entry.relPath, indexErr)
-					continue
-				}
-				startNs = summary.startNs
-				endNs = summary.endNs
-				topics = summary.topics
-
-				if indexDB != nil {
-					_, indexErr = indexDB.Exec(
-						`INSERT OR REPLACE INTO mcap_index (path, mod_time, size, start_time, end_time) VALUES (?, ?, ?, ?, ?)`,
-						entry.relPath, modTimeStr, entry.info.Size(), startNs, endNs,
-					)
-					if indexErr != nil {
-						log.Printf("Warning: could not cache index for %s: %v", entry.relPath, indexErr)
-					}
-					// Cache topics (with message counts)
-					indexDB.Exec(`DELETE FROM mcap_topics WHERE path = ?`, entry.relPath)
-					for _, ti := range topics {
-						indexDB.Exec(
-							`INSERT INTO mcap_topics (path, topic, schema_name, message_encoding, message_count) VALUES (?, ?, ?, ?, ?)`,
-							entry.relPath, ti.Topic, ti.SchemaName, ti.MessageEncoding, ti.MessageCount,
-						)
-					}
-					// Index fields for jsonschema topics
-					indexFieldsForFile(indexDB, entry.relPath, absPath, topics)
-				}
-			}
-
-			// Apply time-range filter: skip files that don't overlap [filterStart, filterEnd]
-			if hasFilter {
-				if filterEndNs > 0 && startNs >= filterEndNs {
-					continue
-				}
-				if filterStartNs > 0 && endNs <= filterStartNs {
-					continue
-				}
-			}
-
-			folder := filepath.Dir(entry.relPath)
-			if folder == "." {
-				folder = ""
-			}
-
-			enc.Encode(map[string]interface{}{"file": McapFileIndex{
-				Path:      entry.relPath,
-				Folder:    folder,
-				Filename:  entry.info.Name(),
-				StartTime: float64(startNs) / 1e9,
-				EndTime:   float64(endNs) / 1e9,
-				Size:      entry.info.Size(),
-				Topics:    topics,
-			}})
-			flusher.Flush()
-		}
-
-		// Phase 3: cleanup stale cache entries
-		if indexDB == nil {
-			// no cache — skip cleanup
-		} else if rows, err := indexDB.Query(`SELECT path FROM mcap_index`); err == nil {
-			var stalePaths []string
-			for rows.Next() {
-				var p string
-				if err := rows.Scan(&p); err != nil {
-					continue
-				}
-				if _, exists := seenPaths[p]; !exists {
-					stalePaths = append(stalePaths, p)
-				}
-			}
-			rows.Close()
-			for _, p := range stalePaths {
-				indexDB.Exec(`DELETE FROM mcap_index WHERE path = ?`, p)
-				indexDB.Exec(`DELETE FROM mcap_topics WHERE path = ?`, p)
-				indexDB.Exec(`DELETE FROM mcap_fields WHERE file_path = ?`, p)
-				indexDB.Exec(`DELETE FROM mcap_samples WHERE file_path = ?`, p)
-			}
-		}
-
-		enc.Encode(map[string]bool{"done": true})
-		flusher.Flush()
-	})
-
-	// API: remux MCAP H.264 video topic to streamable MP4 (no re-encoding)
-	// Usage: GET /api/mcap/video/<path>?topic=<topic>[&start=<unix_sec>][&end=<unix_sec>]
-	mux.HandleFunc("/api/mcap/video/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		topic := r.URL.Query().Get("topic")
-		if topic == "" {
-			http.Error(w, "Missing required 'topic' query parameter", http.StatusBadRequest)
-			return
-		}
-
-		relPath := strings.TrimPrefix(r.URL.Path, "/api/mcap/video/")
-		if relPath == "" {
-			http.Error(w, "Missing file path", http.StatusBadRequest)
-			return
-		}
-		relPath = strings.TrimPrefix(relPath, absPath)
-		relPath = strings.TrimPrefix(relPath, "/")
-		cleanPath := filepath.Clean(relPath)
-		if strings.Contains(cleanPath, "..") {
-			http.Error(w, "Invalid path", http.StatusBadRequest)
-			return
-		}
-		fullPath := filepath.Join(absPath, cleanPath)
-		if !strings.HasPrefix(fullPath, absPath) {
-			http.Error(w, "Invalid path", http.StatusBadRequest)
-			return
-		}
-
-		// Build MCAP read options: topic filter + optional time range
-		readOpts := []mcap.ReadOpt{
-			mcap.WithTopics([]string{topic}),
-		}
-		if s := r.URL.Query().Get("start"); s != "" {
-			sec, err := strconv.ParseFloat(s, 64)
-			if err != nil {
-				http.Error(w, "Invalid 'start' parameter", http.StatusBadRequest)
+		// API: remux MCAP H.264 video topic to streamable MP4 (no re-encoding)
+		// Usage: GET /api/mcap/video/<path>?topic=<topic>[&start=<unix_sec>][&end=<unix_sec>]
+		mux.HandleFunc("/api/mcap/video/", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodOptions {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+				w.WriteHeader(http.StatusNoContent)
 				return
 			}
-			readOpts = append(readOpts, mcap.AfterNanos(uint64(sec*1e9)))
-		}
-		if s := r.URL.Query().Get("end"); s != "" {
-			sec, err := strconv.ParseFloat(s, 64)
-			if err != nil {
-				http.Error(w, "Invalid 'end' parameter", http.StatusBadRequest)
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			readOpts = append(readOpts, mcap.BeforeNanos(uint64(sec*1e9)))
-		}
 
-		// Open MCAP file
-		f, err := os.Open(fullPath)
-		if err != nil {
-			http.Error(w, "File not found", http.StatusNotFound)
-			return
-		}
-		defer f.Close()
+			topic := r.URL.Query().Get("topic")
+			if topic == "" {
+				http.Error(w, "Missing required 'topic' query parameter", http.StatusBadRequest)
+				return
+			}
 
-		reader, err := mcap.NewReader(f)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to open MCAP: %v", err), http.StatusInternalServerError)
-			return
-		}
-		defer reader.Close()
+			relPath := strings.TrimPrefix(r.URL.Path, "/api/mcap/video/")
+			if relPath == "" {
+				http.Error(w, "Missing file path", http.StatusBadRequest)
+				return
+			}
+			relPath = strings.TrimPrefix(relPath, absPath)
+			relPath = strings.TrimPrefix(relPath, "/")
+			cleanPath := filepath.Clean(relPath)
+			if strings.Contains(cleanPath, "..") {
+				http.Error(w, "Invalid path", http.StatusBadRequest)
+				return
+			}
+			fullPath := filepath.Join(absPath, cleanPath)
+			if !strings.HasPrefix(fullPath, absPath) {
+				http.Error(w, "Invalid path", http.StatusBadRequest)
+				return
+			}
 
-		it, err := reader.Messages(readOpts...)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to read messages: %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		// Buffer initial messages to detect encoding, find SPS/PPS, and estimate FPS.
-		// H.264 streams often place SPS/PPS in separate messages that may not appear
-		// until dozens of frames in. ffmpeg cannot initialize without them.
-		type videoFrame struct {
-			data    []byte
-			logTime uint64
-		}
-		const maxProbeMessages = 300 // enough to find SPS/PPS even in slow-keyframe streams
-		var frames []videoFrame
-		var spsData, ppsData []byte
-		var msgEncoding string
-
-		for len(frames) < maxProbeMessages {
-			_, channel, msg, err := it.Next(nil)
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					break
+			// Build MCAP read options: topic filter + optional time range
+			readOpts := []mcap.ReadOpt{
+				mcap.WithTopics([]string{topic}),
+			}
+			if s := r.URL.Query().Get("start"); s != "" {
+				sec, err := strconv.ParseFloat(s, 64)
+				if err != nil {
+					http.Error(w, "Invalid 'start' parameter", http.StatusBadRequest)
+					return
 				}
+				readOpts = append(readOpts, mcap.AfterNanos(uint64(sec*1e9)))
+			}
+			if s := r.URL.Query().Get("end"); s != "" {
+				sec, err := strconv.ParseFloat(s, 64)
+				if err != nil {
+					http.Error(w, "Invalid 'end' parameter", http.StatusBadRequest)
+					return
+				}
+				readOpts = append(readOpts, mcap.BeforeNanos(uint64(sec*1e9)))
+			}
+
+			// Open MCAP file
+			f, err := os.Open(fullPath)
+			if err != nil {
+				http.Error(w, "File not found", http.StatusNotFound)
+				return
+			}
+			defer f.Close()
+
+			reader, err := mcap.NewReader(f)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to open MCAP: %v", err), http.StatusInternalServerError)
+				return
+			}
+			defer reader.Close()
+
+			it, err := reader.Messages(readOpts...)
+			if err != nil {
 				http.Error(w, fmt.Sprintf("Failed to read messages: %v", err), http.StatusInternalServerError)
 				return
 			}
-			if msgEncoding == "" {
-				msgEncoding = channel.MessageEncoding
-			}
-			vdata, extractErr := extractVideoData(msg.Data, msgEncoding)
-			if extractErr != nil {
-				continue
-			}
-			annexB := ensureAnnexB(vdata)
-			frames = append(frames, videoFrame{data: annexB, logTime: msg.LogTime})
 
-			// Extract SPS/PPS if we haven't found them yet
-			if spsData == nil || ppsData == nil {
-				for _, nal := range findAnnexBNALs(annexB) {
-					switch nal.nalType {
-					case 7:
-						if spsData == nil {
-							spsData = make([]byte, nal.length)
-							copy(spsData, annexB[nal.offset:nal.offset+nal.length])
-						}
-					case 8:
-						if ppsData == nil {
-							ppsData = make([]byte, nal.length)
-							copy(ppsData, annexB[nal.offset:nal.offset+nal.length])
-						}
-					}
-				}
+			// Buffer initial messages to detect encoding, find SPS/PPS, and estimate FPS.
+			// H.264 streams often place SPS/PPS in separate messages that may not appear
+			// until dozens of frames in. ffmpeg cannot initialize without them.
+			type videoFrame struct {
+				data    []byte
+				logTime uint64
 			}
-			// Stop probing early once we have SPS+PPS and enough frames for FPS estimate
-			if spsData != nil && ppsData != nil && len(frames) >= 30 {
-				break
-			}
-		}
+			const maxProbeMessages = 300 // enough to find SPS/PPS even in slow-keyframe streams
+			var frames []videoFrame
+			var spsData, ppsData []byte
+			var msgEncoding string
 
-		if len(frames) == 0 {
-			http.Error(w, fmt.Sprintf("No video messages found on topic %q", topic), http.StatusNotFound)
-			return
-		}
-
-		// Estimate FPS from message timestamps
-		fps := 30.0
-		if len(frames) >= 2 {
-			dtSec := float64(frames[len(frames)-1].logTime-frames[0].logTime) / 1e9
-			if dtSec > 0 {
-				fps = float64(len(frames)-1) / dtSec
-				if fps < 1 {
-					fps = 1
-				} else if fps > 120 {
-					fps = 120
-				}
-			}
-		}
-
-		// Start ffmpeg: remux raw H.264 into fragmented MP4 (zero CPU re-encoding)
-		ctx := r.Context()
-		cmd := exec.CommandContext(ctx, "ffmpeg",
-			"-v", "error",
-			"-f", "h264",
-			"-r", strconv.FormatFloat(fps, 'f', 2, 64),
-			"-i", "pipe:0",
-			"-c", "copy",
-			"-movflags", "frag_keyframe+empty_moov",
-			"-f", "mp4",
-			"pipe:1",
-		)
-		stdin, err := cmd.StdinPipe()
-		if err != nil {
-			http.Error(w, "Failed to create ffmpeg pipe", http.StatusInternalServerError)
-			return
-		}
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			http.Error(w, "Failed to create ffmpeg pipe", http.StatusInternalServerError)
-			return
-		}
-		var stderrBuf bytes.Buffer
-		cmd.Stderr = &stderrBuf
-
-		// Set response headers before streaming begins
-		baseName := strings.TrimSuffix(filepath.Base(cleanPath), ".mcap")
-		safeTopic := strings.NewReplacer("/", "_", " ", "_").Replace(strings.TrimPrefix(topic, "/"))
-		w.Header().Set("Content-Type", "video/mp4")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Expose-Headers", "Content-Type, Content-Disposition")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s_%s.mp4"`, baseName, safeTopic))
-
-		if err := cmd.Start(); err != nil {
-			http.Error(w, fmt.Sprintf("Failed to start ffmpeg (is it installed?): %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		// Feed MCAP video data to ffmpeg stdin in background goroutine.
-		// This runs concurrently with stdout reading to avoid pipe deadlocks.
-		go func() {
-			defer stdin.Close()
-			// Write SPS+PPS first so ffmpeg can initialize the decoder
-			if spsData != nil {
-				if _, err := stdin.Write(spsData); err != nil {
-					return
-				}
-			}
-			if ppsData != nil {
-				if _, err := stdin.Write(ppsData); err != nil {
-					return
-				}
-			}
-			for _, frame := range frames {
-				if _, err := stdin.Write(frame.data); err != nil {
-					return
-				}
-			}
-			for {
-				_, _, msg, err := it.Next(nil)
+			for len(frames) < maxProbeMessages {
+				_, channel, msg, err := it.Next(nil)
 				if err != nil {
+					if errors.Is(err, io.EOF) {
+						break
+					}
+					http.Error(w, fmt.Sprintf("Failed to read messages: %v", err), http.StatusInternalServerError)
 					return
+				}
+				if msgEncoding == "" {
+					msgEncoding = channel.MessageEncoding
 				}
 				vdata, extractErr := extractVideoData(msg.Data, msgEncoding)
 				if extractErr != nil {
 					continue
 				}
-				if _, err := stdin.Write(ensureAnnexB(vdata)); err != nil {
-					return
-				}
-			}
-		}()
+				annexB := ensureAnnexB(vdata)
+				frames = append(frames, videoFrame{data: annexB, logTime: msg.LogTime})
 
-		// Stream ffmpeg output to HTTP response with flushing for progressive playback
-		flusher, canFlush := w.(http.Flusher)
-		copyBuf := make([]byte, 64*1024)
-		for {
-			n, readErr := stdout.Read(copyBuf)
-			if n > 0 {
-				if _, writeErr := w.Write(copyBuf[:n]); writeErr != nil {
+				// Extract SPS/PPS if we haven't found them yet
+				if spsData == nil || ppsData == nil {
+					for _, nal := range findAnnexBNALs(annexB) {
+						switch nal.nalType {
+						case 7:
+							if spsData == nil {
+								spsData = make([]byte, nal.length)
+								copy(spsData, annexB[nal.offset:nal.offset+nal.length])
+							}
+						case 8:
+							if ppsData == nil {
+								ppsData = make([]byte, nal.length)
+								copy(ppsData, annexB[nal.offset:nal.offset+nal.length])
+							}
+						}
+					}
+				}
+				// Stop probing early once we have SPS+PPS and enough frames for FPS estimate
+				if spsData != nil && ppsData != nil && len(frames) >= 30 {
 					break
 				}
-				if canFlush {
-					flusher.Flush()
+			}
+
+			if len(frames) == 0 {
+				http.Error(w, fmt.Sprintf("No video messages found on topic %q", topic), http.StatusNotFound)
+				return
+			}
+
+			// Estimate FPS from message timestamps
+			fps := 30.0
+			if len(frames) >= 2 {
+				dtSec := float64(frames[len(frames)-1].logTime-frames[0].logTime) / 1e9
+				if dtSec > 0 {
+					fps = float64(len(frames)-1) / dtSec
+					if fps < 1 {
+						fps = 1
+					} else if fps > 120 {
+						fps = 120
+					}
 				}
 			}
-			if readErr != nil {
-				break
+
+			// Start ffmpeg: remux raw H.264 into fragmented MP4 (zero CPU re-encoding)
+			ctx := r.Context()
+			cmd := exec.CommandContext(ctx, "ffmpeg",
+				"-v", "error",
+				"-f", "h264",
+				"-r", strconv.FormatFloat(fps, 'f', 2, 64),
+				"-i", "pipe:0",
+				"-c", "copy",
+				"-movflags", "frag_keyframe+empty_moov",
+				"-f", "mp4",
+				"pipe:1",
+			)
+			stdin, err := cmd.StdinPipe()
+			if err != nil {
+				http.Error(w, "Failed to create ffmpeg pipe", http.StatusInternalServerError)
+				return
 			}
-		}
-
-		if err := cmd.Wait(); err != nil && ctx.Err() == nil {
-			log.Printf("ffmpeg error for %s topic=%s: %v\nstderr: %s", cleanPath, topic, err, stderrBuf.String())
-		}
-	})
-
-	// API: list plottable fields for a folder
-	// GET /api/mcap/fields?folder=<folder>[&plottable=true]
-	mux.HandleFunc("/api/mcap/fields", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		folder := r.URL.Query().Get("folder")
-		if folder == "" {
-			http.Error(w, "Missing required 'folder' query parameter", http.StatusBadRequest)
-			return
-		}
-		plottable := r.URL.Query().Get("plottable") != "false"
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-
-		if indexDB == nil {
-			json.NewEncoder(w).Encode([]McapFieldInfo{})
-			return
-		}
-
-		// Match files in this folder (folder can be "" or "." for root)
-		var pathPattern string
-		if folder == "" || folder == "." || folder == "/" {
-			pathPattern = "%"
-		} else {
-			pathPattern = strings.TrimSuffix(folder, "/") + "/%"
-		}
-
-		query := `SELECT DISTINCT topic, field_name, field_type FROM mcap_fields WHERE file_path LIKE ?`
-		args := []interface{}{pathPattern}
-		if plottable {
-			query += ` AND field_type != 'string'`
-		}
-		query += ` ORDER BY topic, field_name`
-
-		rows, err := indexDB.Query(query, args...)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Query error: %v", err), http.StatusInternalServerError)
-			return
-		}
-		defer rows.Close()
-
-		var fields []McapFieldInfo
-		for rows.Next() {
-			var fi McapFieldInfo
-			if rows.Scan(&fi.Topic, &fi.Field, &fi.Type) == nil {
-				fields = append(fields, fi)
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				http.Error(w, "Failed to create ffmpeg pipe", http.StatusInternalServerError)
+				return
 			}
-		}
-		if fields == nil {
-			fields = []McapFieldInfo{}
-		}
-		json.NewEncoder(w).Encode(fields)
-	})
+			var stderrBuf bytes.Buffer
+			cmd.Stderr = &stderrBuf
 
-	// API: sample field values from MCAP files in a folder
-	// GET /api/mcap/sample?folder=<folder>&topic=<topic>&field=<field>&start=<unix_sec>&end=<unix_sec>[&decimation=10][&maxPoints=500]
-	mux.HandleFunc("/api/mcap/sample", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
+			// Set response headers before streaming begins
+			baseName := strings.TrimSuffix(filepath.Base(cleanPath), ".mcap")
+			safeTopic := strings.NewReplacer("/", "_", " ", "_").Replace(strings.TrimPrefix(topic, "/"))
+			w.Header().Set("Content-Type", "video/mp4")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Expose-Headers", "Content-Type, Content-Disposition")
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s_%s.mp4"`, baseName, safeTopic))
 
-		q := r.URL.Query()
-		folder := q.Get("folder")
-		topic := q.Get("topic")
-		field := q.Get("field")
-		startStr := q.Get("start")
-		endStr := q.Get("end")
-
-		if folder == "" || topic == "" || field == "" || startStr == "" || endStr == "" {
-			http.Error(w, "Missing required parameters: folder, topic, field, start, end", http.StatusBadRequest)
-			return
-		}
-
-		startSec, err := strconv.ParseFloat(startStr, 64)
-		if err != nil {
-			http.Error(w, "Invalid 'start' parameter", http.StatusBadRequest)
-			return
-		}
-		endSec, err := strconv.ParseFloat(endStr, 64)
-		if err != nil {
-			http.Error(w, "Invalid 'end' parameter", http.StatusBadRequest)
-			return
-		}
-
-		decimation := 10
-		if d := q.Get("decimation"); d != "" {
-			if v, err := strconv.Atoi(d); err == nil && v > 0 {
-				decimation = v
+			if err := cmd.Start(); err != nil {
+				http.Error(w, fmt.Sprintf("Failed to start ffmpeg (is it installed?): %v", err), http.StatusInternalServerError)
+				return
 			}
-		}
-		maxPoints := 500
-		if m := q.Get("maxPoints"); m != "" {
-			if v, err := strconv.Atoi(m); err == nil && v > 0 {
-				maxPoints = v
+
+			// Feed MCAP video data to ffmpeg stdin in background goroutine.
+			// This runs concurrently with stdout reading to avoid pipe deadlocks.
+			go func() {
+				defer stdin.Close()
+				// Write SPS+PPS first so ffmpeg can initialize the decoder
+				if spsData != nil {
+					if _, err := stdin.Write(spsData); err != nil {
+						return
+					}
+				}
+				if ppsData != nil {
+					if _, err := stdin.Write(ppsData); err != nil {
+						return
+					}
+				}
+				for _, frame := range frames {
+					if _, err := stdin.Write(frame.data); err != nil {
+						return
+					}
+				}
+				for {
+					_, _, msg, err := it.Next(nil)
+					if err != nil {
+						return
+					}
+					vdata, extractErr := extractVideoData(msg.Data, msgEncoding)
+					if extractErr != nil {
+						continue
+					}
+					if _, err := stdin.Write(ensureAnnexB(vdata)); err != nil {
+						return
+					}
+				}
+			}()
+
+			// Stream ffmpeg output to HTTP response with flushing for progressive playback
+			flusher, canFlush := w.(http.Flusher)
+			copyBuf := make([]byte, 64*1024)
+			for {
+				n, readErr := stdout.Read(copyBuf)
+				if n > 0 {
+					if _, writeErr := w.Write(copyBuf[:n]); writeErr != nil {
+						break
+					}
+					if canFlush {
+						flusher.Flush()
+					}
+				}
+				if readErr != nil {
+					break
+				}
 			}
-		}
 
-		startNs := uint64(startSec * 1e9)
-		endNs := uint64(endSec * 1e9)
+			if err := cmd.Wait(); err != nil && ctx.Err() == nil {
+				log.Printf("ffmpeg error for %s topic=%s: %v\nstderr: %s", cleanPath, topic, err, stderrBuf.String())
+			}
+		})
 
-		// Find files in folder overlapping [startNs, endNs]
-		type fileEntry struct {
-			path    string
-			startNs uint64
-			endNs   uint64
-		}
-		var files []fileEntry
+		// API: list plottable fields for a folder
+		// GET /api/mcap/fields?folder=<folder>[&plottable=true]
+		mux.HandleFunc("/api/mcap/fields", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			folder := r.URL.Query().Get("folder")
+			if folder == "" {
+				http.Error(w, "Missing required 'folder' query parameter", http.StatusBadRequest)
+				return
+			}
+			plottable := r.URL.Query().Get("plottable") != "false"
 
-		if indexDB != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+
+			if indexDB == nil {
+				json.NewEncoder(w).Encode([]McapFieldInfo{})
+				return
+			}
+
+			// Match files in this folder (folder can be "" or "." for root)
 			var pathPattern string
 			if folder == "" || folder == "." || folder == "/" {
 				pathPattern = "%"
 			} else {
 				pathPattern = strings.TrimSuffix(folder, "/") + "/%"
 			}
-			rows, err := indexDB.Query(
-				`SELECT path, start_time, end_time FROM mcap_index
-				 WHERE path LIKE ? AND end_time > ? AND start_time < ?
-				 ORDER BY start_time`,
-				pathPattern, startNs, endNs,
-			)
-			if err == nil {
-				for rows.Next() {
-					var fe fileEntry
-					if rows.Scan(&fe.path, &fe.startNs, &fe.endNs) == nil {
-						files = append(files, fe)
-					}
-				}
-				rows.Close()
+
+			query := `SELECT DISTINCT topic, field_name, field_type FROM mcap_fields WHERE file_path LIKE ?`
+			args := []interface{}{pathPattern}
+			if plottable {
+				query += ` AND field_type != 'string'`
 			}
-		}
+			query += ` ORDER BY topic, field_name`
 
-		if len(files) == 0 {
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			json.NewEncoder(w).Encode(map[string]interface{}{"segments": []interface{}{}})
-			return
-		}
-
-		// Sample each file concurrently (limited by sampleSemaphore)
-		type sampleSegment struct {
-			File       string    `json:"file"`
-			Timestamps []float64 `json:"timestamps"`
-			Values     []float64 `json:"values"`
-		}
-		type indexedSegment struct {
-			idx     int
-			segment sampleSegment
-			err     error
-		}
-
-		results := make(chan indexedSegment, len(files))
-		var wg sync.WaitGroup
-		done := r.Context().Done()
-		pointsPerFile := int(math.Max(float64(maxPoints)/float64(len(files)), 20))
-
-		for i, fe := range files {
-			wg.Add(1)
-			go func(idx int, fe fileEntry) {
-				defer wg.Done()
-				// Clamp the range to this file's time span
-				fStart := startNs
-				if fe.startNs > fStart {
-					fStart = fe.startNs
-				}
-				fEnd := endNs
-				if fe.endNs < fEnd {
-					fEnd = fe.endNs
-				}
-				ts, vals, err := sampleFieldFromFile(indexDB, fe.path, absPath, topic, field, fStart, fEnd, decimation, done)
-				if err != nil {
-					results <- indexedSegment{idx: idx, err: err}
-					return
-				}
-				// Downsample to fit in budget
-				ts, vals = minMaxDownsample(ts, vals, pointsPerFile)
-				results <- indexedSegment{
-					idx:     idx,
-					segment: sampleSegment{File: fe.path, Timestamps: ts, Values: vals},
-				}
-			}(i, fe)
-		}
-
-		go func() {
-			wg.Wait()
-			close(results)
-		}()
-
-		segments := make([]sampleSegment, len(files))
-		for res := range results {
-			if res.err == nil && len(res.segment.Timestamps) > 0 {
-				segments[res.idx] = res.segment
+			rows, err := indexDB.Query(query, args...)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Query error: %v", err), http.StatusInternalServerError)
+				return
 			}
-		}
-		// Filter out empty segments
-		var nonEmpty []sampleSegment
-		for _, s := range segments {
-			if len(s.Timestamps) > 0 {
-				nonEmpty = append(nonEmpty, s)
+			defer rows.Close()
+
+			var fields []McapFieldInfo
+			for rows.Next() {
+				var fi McapFieldInfo
+				if rows.Scan(&fi.Topic, &fi.Field, &fi.Type) == nil {
+					fields = append(fields, fi)
+				}
 			}
-		}
-		// Sort by first timestamp
-		sort.Slice(nonEmpty, func(i, j int) bool {
-			return nonEmpty[i].Timestamps[0] < nonEmpty[j].Timestamps[0]
+			if fields == nil {
+				fields = []McapFieldInfo{}
+			}
+			json.NewEncoder(w).Encode(fields)
 		})
 
-		if nonEmpty == nil {
-			nonEmpty = []sampleSegment{}
-		}
+		// API: sample field values from MCAP files in a folder
+		// GET /api/mcap/sample?folder=<folder>&topic=<topic>&field=<field>&start=<unix_sec>&end=<unix_sec>[&decimation=10][&maxPoints=500]
+		mux.HandleFunc("/api/mcap/sample", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		json.NewEncoder(w).Encode(map[string]interface{}{"segments": nonEmpty})
-	})
+			q := r.URL.Query()
+			folder := q.Get("folder")
+			topic := q.Get("topic")
+			field := q.Get("field")
+			startStr := q.Get("start")
+			endStr := q.Get("end")
+
+			if folder == "" || topic == "" || field == "" || startStr == "" || endStr == "" {
+				http.Error(w, "Missing required parameters: folder, topic, field, start, end", http.StatusBadRequest)
+				return
+			}
+
+			startSec, err := strconv.ParseFloat(startStr, 64)
+			if err != nil {
+				http.Error(w, "Invalid 'start' parameter", http.StatusBadRequest)
+				return
+			}
+			endSec, err := strconv.ParseFloat(endStr, 64)
+			if err != nil {
+				http.Error(w, "Invalid 'end' parameter", http.StatusBadRequest)
+				return
+			}
+
+			decimation := 10
+			if d := q.Get("decimation"); d != "" {
+				if v, err := strconv.Atoi(d); err == nil && v > 0 {
+					decimation = v
+				}
+			}
+			maxPoints := 500
+			if m := q.Get("maxPoints"); m != "" {
+				if v, err := strconv.Atoi(m); err == nil && v > 0 {
+					maxPoints = v
+				}
+			}
+
+			startNs := uint64(startSec * 1e9)
+			endNs := uint64(endSec * 1e9)
+
+			// Find files in folder overlapping [startNs, endNs]
+			type fileEntry struct {
+				path    string
+				startNs uint64
+				endNs   uint64
+			}
+			var files []fileEntry
+
+			if indexDB != nil {
+				var pathPattern string
+				if folder == "" || folder == "." || folder == "/" {
+					pathPattern = "%"
+				} else {
+					pathPattern = strings.TrimSuffix(folder, "/") + "/%"
+				}
+				rows, err := indexDB.Query(
+					`SELECT path, start_time, end_time FROM mcap_index
+				 WHERE path LIKE ? AND end_time > ? AND start_time < ?
+				 ORDER BY start_time`,
+					pathPattern, startNs, endNs,
+				)
+				if err == nil {
+					for rows.Next() {
+						var fe fileEntry
+						if rows.Scan(&fe.path, &fe.startNs, &fe.endNs) == nil {
+							files = append(files, fe)
+						}
+					}
+					rows.Close()
+				}
+			}
+
+			if len(files) == 0 {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				json.NewEncoder(w).Encode(map[string]interface{}{"segments": []interface{}{}})
+				return
+			}
+
+			// Sample each file concurrently (limited by sampleSemaphore)
+			type sampleSegment struct {
+				File       string    `json:"file"`
+				Timestamps []float64 `json:"timestamps"`
+				Values     []float64 `json:"values"`
+			}
+			type indexedSegment struct {
+				idx     int
+				segment sampleSegment
+				err     error
+			}
+
+			results := make(chan indexedSegment, len(files))
+			var wg sync.WaitGroup
+			done := r.Context().Done()
+			pointsPerFile := int(math.Max(float64(maxPoints)/float64(len(files)), 20))
+
+			for i, fe := range files {
+				wg.Add(1)
+				go func(idx int, fe fileEntry) {
+					defer wg.Done()
+					// Clamp the range to this file's time span
+					fStart := startNs
+					if fe.startNs > fStart {
+						fStart = fe.startNs
+					}
+					fEnd := endNs
+					if fe.endNs < fEnd {
+						fEnd = fe.endNs
+					}
+					ts, vals, err := sampleFieldFromFile(indexDB, fe.path, absPath, topic, field, fStart, fEnd, decimation, done)
+					if err != nil {
+						results <- indexedSegment{idx: idx, err: err}
+						return
+					}
+					// Downsample to fit in budget
+					ts, vals = minMaxDownsample(ts, vals, pointsPerFile)
+					results <- indexedSegment{
+						idx:     idx,
+						segment: sampleSegment{File: fe.path, Timestamps: ts, Values: vals},
+					}
+				}(i, fe)
+			}
+
+			go func() {
+				wg.Wait()
+				close(results)
+			}()
+
+			segments := make([]sampleSegment, len(files))
+			for res := range results {
+				if res.err == nil && len(res.segment.Timestamps) > 0 {
+					segments[res.idx] = res.segment
+				}
+			}
+			// Filter out empty segments
+			var nonEmpty []sampleSegment
+			for _, s := range segments {
+				if len(s.Timestamps) > 0 {
+					nonEmpty = append(nonEmpty, s)
+				}
+			}
+			// Sort by first timestamp
+			sort.Slice(nonEmpty, func(i, j int) bool {
+				return nonEmpty[i].Timestamps[0] < nonEmpty[j].Timestamps[0]
+			})
+
+			if nonEmpty == nil {
+				nonEmpty = []sampleSegment{}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			json.NewEncoder(w).Encode(map[string]interface{}{"segments": nonEmpty})
+		})
 
 	} // end if absPath != ""
 
@@ -1878,5 +1681,293 @@ func main() {
 	} else {
 		log.Printf("octaview Studio server starting on http://localhost:%d", *port)
 		log.Fatal(http.ListenAndServe(addr, handler))
+	}
+}
+
+// mcapIndexHandler streams the recording index as NDJSON. It bulk-loads the
+// SQLite cache once, emits the total from that cache (so the first byte lands
+// immediately instead of after a full disk walk), streams settled cached files
+// without touching disk, and reads only new/growing files — concurrently — so
+// they never stall the cached majority.
+func mcapIndexHandler(absPath string, indexDB *sql.DB, indexScanWorkers int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Cache-Control", "no-cache")
+
+		// Optional time-range filter: only return files overlapping [filterStartNs, filterEndNs]
+		var filterStartNs, filterEndNs uint64
+		hasFilter := false
+		if s := r.URL.Query().Get("start"); s != "" {
+			sec, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				http.Error(w, "Invalid 'start' parameter", http.StatusBadRequest)
+				return
+			}
+			filterStartNs = uint64(sec * 1e9)
+			hasFilter = true
+		}
+		if s := r.URL.Query().Get("end"); s != "" {
+			sec, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				http.Error(w, "Invalid 'end' parameter", http.StatusBadRequest)
+				return
+			}
+			filterEndNs = uint64(sec * 1e9)
+			hasFilter = true
+		}
+
+		enc := json.NewEncoder(w)
+
+		// Stop touching the disk when the client goes away (tab closed / request
+		// abandoned) instead of walking the whole tree anyway.
+		done := r.Context().Done()
+
+		// passesFilter reports whether [startNs, endNs] overlaps the optional
+		// ?start/?end time-range filter.
+		passesFilter := func(startNs, endNs uint64) bool {
+			if !hasFilter {
+				return true
+			}
+			if filterEndNs > 0 && startNs >= filterEndNs {
+				return false
+			}
+			if filterStartNs > 0 && endNs <= filterStartNs {
+				return false
+			}
+			return true
+		}
+
+		makeFileIndex := func(relPath string, startNs, endNs uint64, size int64, topics []McapTopicInfo) McapFileIndex {
+			folder := filepath.Dir(relPath)
+			if folder == "." {
+				folder = ""
+			}
+			return McapFileIndex{
+				Path:      relPath,
+				Folder:    folder,
+				Filename:  filepath.Base(relPath),
+				StartTime: float64(startNs) / 1e9,
+				EndTime:   float64(endNs) / 1e9,
+				Size:      size,
+				Topics:    topics,
+			}
+		}
+
+		// Phase 1: bulk-load the whole cache up front (two queries instead of
+		// ~2 per file). For a warm cache this is the entire index — we can stream
+		// it without touching the disk at all.
+		type cachedEntry struct {
+			size           int64
+			startNs, endNs uint64
+			topics         []McapTopicInfo
+		}
+		cacheIndex := make(map[string]cachedEntry)
+		if indexDB != nil {
+			if rows, err := indexDB.Query(`SELECT path, size, start_time, end_time FROM mcap_index`); err == nil {
+				for rows.Next() {
+					var p string
+					var ce cachedEntry
+					if rows.Scan(&p, &ce.size, &ce.startNs, &ce.endNs) == nil {
+						cacheIndex[p] = ce
+					}
+				}
+				rows.Close()
+			}
+			if rows, err := indexDB.Query(`SELECT path, topic, schema_name, message_encoding, message_count FROM mcap_topics`); err == nil {
+				for rows.Next() {
+					var p string
+					var ti McapTopicInfo
+					if rows.Scan(&p, &ti.Topic, &ti.SchemaName, &ti.MessageEncoding, &ti.MessageCount) == nil {
+						if ce, ok := cacheIndex[p]; ok {
+							ce.topics = append(ce.topics, ti)
+							cacheIndex[p] = ce
+						}
+					}
+				}
+				rows.Close()
+			}
+		}
+
+		// First byte lands immediately: the total comes from the cache, not a
+		// full disk walk. On a warm cache this equals the file count; new files
+		// may push `indexed` past it (the client's progress bar just caps at 100%).
+		enc.Encode(map[string]int{"total": len(cacheIndex)})
+		flusher.Flush()
+
+		// indexNewFile stats + reads a single not-yet-cached (or possibly-growing)
+		// file, writes it to the cache, and returns its index entry — or nil if it
+		// couldn't be read or is filtered out. Safe for concurrent use: *sql.DB is
+		// pooled and getMcapSummary opens its own file handle.
+		indexNewFile := func(path, relPath string) *McapFileIndex {
+			info, err := os.Stat(path)
+			if err != nil {
+				log.Printf("Warning: could not stat %s: %v", relPath, err)
+				return nil
+			}
+			summary, indexErr := getMcapSummary(path)
+			if indexErr != nil {
+				log.Printf("Warning: could not index %s: %v", relPath, indexErr)
+				return nil
+			}
+			startNs, endNs, topics := summary.startNs, summary.endNs, summary.topics
+			if indexDB != nil {
+				modTimeStr := info.ModTime().UTC().Format(time.RFC3339)
+				if _, e := indexDB.Exec(
+					`INSERT OR REPLACE INTO mcap_index (path, mod_time, size, start_time, end_time) VALUES (?, ?, ?, ?, ?)`,
+					relPath, modTimeStr, info.Size(), startNs, endNs,
+				); e != nil {
+					log.Printf("Warning: could not cache index for %s: %v", relPath, e)
+				}
+				indexDB.Exec(`DELETE FROM mcap_topics WHERE path = ?`, relPath)
+				for _, ti := range topics {
+					indexDB.Exec(
+						`INSERT INTO mcap_topics (path, topic, schema_name, message_encoding, message_count) VALUES (?, ?, ?, ?, ?)`,
+						relPath, ti.Topic, ti.SchemaName, ti.MessageEncoding, ti.MessageCount,
+					)
+				}
+				indexFieldsForFile(indexDB, relPath, absPath, topics)
+			}
+			if !passesFilter(startNs, endNs) {
+				return nil
+			}
+			fi := makeFileIndex(relPath, startNs, endNs, info.Size(), topics)
+			return &fi
+		}
+
+		// Phase 2: single walk. Cached, settled files are emitted straight from
+		// the maps (no stat, no read). New files — and any cached file whose
+		// end_time is recent enough that it may still be growing — are collected
+		// for the read pass below so they never stall the cached majority.
+		//
+		// nowNs/liveWindowNs form the "still recording?" guard: a cached file
+		// whose end lies within the window is re-read to catch appended data;
+		// everything older is trusted as immutable-at-rest.
+		nowNs := uint64(time.Now().UnixNano())
+		const liveWindowNs uint64 = 5 * 60 * 1e9 // 5 minutes
+		type newFile struct{ path, relPath string }
+		var newEntries []newFile
+		seenPaths := make(map[string]struct{}, len(cacheIndex))
+		filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
+			select {
+			case <-done:
+				return filepath.SkipAll
+			default:
+			}
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() || !strings.HasSuffix(strings.ToLower(d.Name()), ".mcap") {
+				return nil
+			}
+			relPath, _ := filepath.Rel(absPath, path)
+			seenPaths[relPath] = struct{}{}
+			if ce, ok := cacheIndex[relPath]; ok && ce.endNs+liveWindowNs < nowNs {
+				// Settled cached file: trust the cache, no disk access.
+				if passesFilter(ce.startNs, ce.endNs) {
+					enc.Encode(map[string]interface{}{"file": makeFileIndex(relPath, ce.startNs, ce.endNs, ce.size, ce.topics)})
+					flusher.Flush()
+				}
+			} else {
+				// New file, or a cached file that may still be growing → (re)read.
+				newEntries = append(newEntries, newFile{path: path, relPath: relPath})
+			}
+			return nil
+		})
+
+		// A disconnected client leaves seenPaths partial; returning here skips the
+		// Phase 3 stale-cleanup, which is required — cleanup with a partial
+		// seenPaths would delete cache rows for files not yet visited.
+		if r.Context().Err() != nil {
+			return
+		}
+
+		// Phase 2b: read the new/growing files concurrently to hide per-file
+		// latency (networked mounts turn each stat+read into a round-trip), while
+		// emission stays on this goroutine — enc/flusher are not concurrency-safe.
+		if len(newEntries) > 0 {
+			workers := indexScanWorkers
+			if workers > len(newEntries) {
+				workers = len(newEntries)
+			}
+			jobs := make(chan newFile)
+			results := make(chan *McapFileIndex)
+			var wg sync.WaitGroup
+			for i := 0; i < workers; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for nf := range jobs {
+						select {
+						case <-done:
+							continue // drain without work once the client is gone
+						default:
+						}
+						results <- indexNewFile(nf.path, nf.relPath)
+					}
+				}()
+			}
+			go func() {
+				defer close(jobs)
+				for _, nf := range newEntries {
+					select {
+					case <-done:
+						return
+					case jobs <- nf:
+					}
+				}
+			}()
+			go func() {
+				wg.Wait()
+				close(results)
+			}()
+			for fi := range results {
+				if fi == nil {
+					continue
+				}
+				enc.Encode(map[string]interface{}{"file": *fi})
+				flusher.Flush()
+			}
+			if r.Context().Err() != nil {
+				return
+			}
+		}
+
+		// Phase 3: cleanup stale cache entries
+		if indexDB == nil {
+			// no cache — skip cleanup
+		} else if rows, err := indexDB.Query(`SELECT path FROM mcap_index`); err == nil {
+			var stalePaths []string
+			for rows.Next() {
+				var p string
+				if err := rows.Scan(&p); err != nil {
+					continue
+				}
+				if _, exists := seenPaths[p]; !exists {
+					stalePaths = append(stalePaths, p)
+				}
+			}
+			rows.Close()
+			for _, p := range stalePaths {
+				indexDB.Exec(`DELETE FROM mcap_index WHERE path = ?`, p)
+				indexDB.Exec(`DELETE FROM mcap_topics WHERE path = ?`, p)
+				indexDB.Exec(`DELETE FROM mcap_fields WHERE file_path = ?`, p)
+				indexDB.Exec(`DELETE FROM mcap_samples WHERE file_path = ?`, p)
+			}
+		}
+
+		enc.Encode(map[string]bool{"done": true})
+		flusher.Flush()
 	}
 }
