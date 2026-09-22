@@ -2,7 +2,7 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import { findNalUnits, containsKeyframe } from "./H264Decoder";
+import { findNalUnits, containsKeyframe, preferredHardwareAcceleration } from "./H264Decoder";
 
 // Helper to build an Annex B byte stream with the given NAL types
 function buildAnnexB(...nalTypes: number[]): Uint8Array {
@@ -63,5 +63,49 @@ describe("containsKeyframe", () => {
   it("returns true when IDR is mixed with delta frames", () => {
     const data = buildAnnexB(7, 8, 5, 1, 1); // SPS + PPS + IDR + delta + delta
     expect(containsKeyframe(data)).toBe(true);
+  });
+});
+
+describe("preferredHardwareAcceleration", () => {
+  afterEach(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (globalThis as any).VideoDecoder;
+  });
+
+  it("prefers hardware when the platform supports it", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).VideoDecoder = {
+      isConfigSupported: jest.fn().mockResolvedValue({ supported: true }),
+    };
+    await expect(preferredHardwareAcceleration("avc1.42001f")).resolves.toBe("prefer-hardware");
+  });
+
+  it("falls back to no-preference when hardware decode is unsupported", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).VideoDecoder = {
+      isConfigSupported: jest.fn().mockResolvedValue({ supported: false }),
+    };
+    await expect(preferredHardwareAcceleration("avc1.42002a")).resolves.toBe("no-preference");
+  });
+
+  it("falls back to no-preference when the support probe throws", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).VideoDecoder = {
+      isConfigSupported: jest.fn().mockRejectedValue(new Error("nope")),
+    };
+    await expect(preferredHardwareAcceleration("avc1.420030")).resolves.toBe("no-preference");
+  });
+
+  it("falls back to no-preference when VideoDecoder is unavailable", async () => {
+    await expect(preferredHardwareAcceleration("avc1.420031")).resolves.toBe("no-preference");
+  });
+
+  it("memoizes the probe per codec string", async () => {
+    const isConfigSupported = jest.fn().mockResolvedValue({ supported: true });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).VideoDecoder = { isConfigSupported };
+    await preferredHardwareAcceleration("avc1.420032");
+    await preferredHardwareAcceleration("avc1.420032");
+    expect(isConfigSupported).toHaveBeenCalledTimes(1);
   });
 });

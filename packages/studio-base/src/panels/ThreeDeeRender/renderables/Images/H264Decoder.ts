@@ -17,9 +17,48 @@ export class NoFrameError extends Error {
 }
 
 type PendingFrame = {
-  resolve: (bitmap: ImageBitmap) => void;
+  resolve: (bitmap: ImageBitmap | undefined) => void;
   reject: (error: Error) => void;
+  /**
+   * When set and true at output time, the decoded frame is discarded without
+   * the (expensive) ImageBitmap conversion and the promise resolves undefined.
+   * Lets a caller submit every frame — preserving the P-frame reference chain —
+   * while only paying for the frames it will actually display.
+   */
+  isStale?: () => boolean;
 };
+
+type HardwarePreference = "no-preference" | "prefer-hardware" | "prefer-software";
+
+const hwAccelByCodec = new Map<string, Promise<HardwarePreference>>();
+
+/**
+ * Probe (once per codec string) whether the platform can hardware-decode this
+ * codec, so VideoDecoder can be configured with "prefer-hardware" where it
+ * helps and safely fall back to "no-preference" everywhere else.
+ */
+export async function preferredHardwareAcceleration(codec: string): Promise<HardwarePreference> {
+  let probe = hwAccelByCodec.get(codec);
+  if (!probe) {
+    probe = (async () => {
+      try {
+        const decoderCtor = (globalThis as { VideoDecoder?: typeof VideoDecoder }).VideoDecoder;
+        if (!decoderCtor) {
+          return "no-preference";
+        }
+        const result = await decoderCtor.isConfigSupported({
+          codec,
+          hardwareAcceleration: "prefer-hardware",
+        });
+        return result.supported === true ? "prefer-hardware" : "no-preference";
+      } catch {
+        return "no-preference";
+      }
+    })();
+    hwAccelByCodec.set(codec, probe);
+  }
+  return await probe;
+}
 
 /**
  * Parses H.264 Annex B byte stream to find NAL unit boundaries and types.
@@ -103,10 +142,17 @@ export class H264Decoder {
    *
    * @param data - Raw H.264 Annex B data (with start codes)
    * @param timestampNanos - Frame timestamp in nanoseconds
-   * @returns Decoded frame as ImageBitmap
+   * @param isStale - When provided and true at output time, the frame is
+   *   decoded (keeping the reference chain intact) but not converted to an
+   *   ImageBitmap; the promise resolves undefined instead.
+   * @returns Decoded frame as ImageBitmap, or undefined for stale frames
    * @throws NoFrameError if the data contains only parameter sets (no slice)
    */
-  async decode(data: Uint8Array, timestampNanos: bigint): Promise<ImageBitmap> {
+  async decode(
+    data: Uint8Array,
+    timestampNanos: bigint,
+    isStale?: () => boolean,
+  ): Promise<ImageBitmap | undefined> {
     const nalUnits = findNalUnits(data);
 
     let hasSlice = false;
@@ -118,7 +164,7 @@ export class H264Decoder {
         const spsData = data.subarray(nal.offset, nal.offset + nal.length);
         const codecString = extractCodecString(spsData);
         if (codecString !== this.#codecString) {
-          this.#configure(codecString);
+          await this.#configure(codecString);
         }
       } else if (nal.type === 5) {
         // IDR slice (keyframe)
@@ -154,8 +200,8 @@ export class H264Decoder {
     perfStats.count("video.framesIn");
     perfStats.max("video.queueMax", this.#decoder.decodeQueueSize);
 
-    return new Promise<ImageBitmap>((resolve, reject) => {
-      this.#pendingFrames.push({ resolve, reject });
+    return await new Promise<ImageBitmap | undefined>((resolve, reject) => {
+      this.#pendingFrames.push({ resolve, reject, isStale });
 
       try {
         this.#decoder!.decode(
@@ -173,9 +219,14 @@ export class H264Decoder {
     });
   }
 
-  #configure(codecString: string): void {
+  async #configure(codecString: string): Promise<void> {
     this.#codecString = codecString;
     this.#keyframeSeen = false;
+
+    // Ask for hardware decode where the platform has it; concurrent software
+    // decode of several streams is what flattens older machines.
+    const hardwareAcceleration = await preferredHardwareAcceleration(codecString);
+    perfStats.gauge("video.hwAccel", hardwareAcceleration === "prefer-hardware" ? 1 : 0);
 
     // Reject any pending frames from the old decoder
     this.#rejectAllPending("Decoder reconfigured");
@@ -199,6 +250,14 @@ export class H264Decoder {
           return;
         }
         perfStats.count("video.framesOut");
+        // A frame superseded while queued keeps the decoder's reference chain
+        // warm but skips the expensive bitmap conversion and display.
+        if (pending.isStale?.() === true) {
+          perfStats.count("video.bitmapSkipped");
+          frame.close();
+          pending.resolve(undefined);
+          return;
+        }
         createImageBitmap(frame)
           .then((bitmap) => {
             frame.close();
@@ -223,7 +282,7 @@ export class H264Decoder {
     });
 
     this.#decoder = decoder;
-    this.#decoder.configure({ codec: codecString });
+    this.#decoder.configure({ codec: codecString, hardwareAcceleration });
   }
 
   #rejectAllPending(reason: string): void {

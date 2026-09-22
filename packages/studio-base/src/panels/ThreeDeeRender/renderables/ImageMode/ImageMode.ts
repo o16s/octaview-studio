@@ -75,6 +75,7 @@ import {
 } from "../../ros";
 import { topicIsConvertibleToSchema } from "../../topicIsConvertibleToSchema";
 import { ICameraHandler } from "../ICameraHandler";
+import { containsKeyframe } from "../Images/H264Decoder";
 import { getTopicMatchPrefix, sortPrefixMatchesToFront } from "../Images/topicPrefixMatching";
 import { colorModeSettingsFields } from "../colorMode";
 
@@ -316,14 +317,23 @@ export class ImageMode
     return msgs;
   }
 
-  /** Video-specific queue filter: keep only the last message to avoid timelapse when
-   * allFrames preloading dumps many frames into the queue at once. Keyframe priming
-   * (#requestKeyframePriming) handles proper H.264 decode by reading allFrames directly. */
+  /** Video-specific queue filter. H.264 delta frames reference prior frames,
+   * so dropping intermediates (the old `slice(-1)`) handed the decoder
+   * unreferenced P-frames — decode errors and repeated full-GOP keyframe
+   * re-priming under load. Instead, keep the decode chain intact but bounded:
+   * from the LAST keyframe in the batch onward (≤ one GOP — covers seeks and
+   * preload dumps without decoding the whole queue), or the whole batch when
+   * it has no keyframe (steady playback continuing the current chain). Stale
+   * frames skip the expensive bitmap/display step (H264Decoder isStale), so
+   * this causes no visual timelapse. */
   #filterVideoMessageQueue(msgs: MessageEvent[]): MessageEvent[] {
-    if (this.getImageModeSettings().synchronize) {
-      return msgs;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const data = (msgs[i]!.message as { data?: unknown }).data;
+      if (data instanceof Uint8Array && containsKeyframe(data)) {
+        return i === 0 ? msgs : msgs.slice(i);
+      }
     }
-    return msgs.slice(-1);
+    return msgs;
   }
 
   public override dispose(): void {

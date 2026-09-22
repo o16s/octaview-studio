@@ -189,11 +189,20 @@ export class ImageRenderable extends Renderable<ImageUserData> {
     this.userData.image = image;
 
     const seq = ++this.#receivedImageSequenceNumber;
-    const decodePromise = this.decodeImage(image, resizeWidth);
+    const decodePromise = this.decodeImage(
+      image,
+      resizeWidth,
+      () => seq !== this.#receivedImageSequenceNumber,
+    );
 
     decodePromise
       .then((result) => {
         if (this.isDisposed()) {
+          return;
+        }
+        // undefined = a stale video frame decoded only to keep the reference
+        // chain intact; there is nothing to display.
+        if (result == undefined) {
           return;
         }
         // prevent displaying an image older than the one currently displayed
@@ -365,7 +374,8 @@ export class ImageRenderable extends Renderable<ImageUserData> {
   protected async decodeImage(
     image: AnyImage,
     resizeWidth?: number,
-  ): Promise<ImageBitmap | ImageData> {
+    isStale?: () => boolean,
+  ): Promise<ImageBitmap | ImageData | undefined> {
     if ("format" in image) {
       if ("timestamp" in image && isVideoFormat(image.format)) {
         if (typeof VideoDecoder === "undefined") {
@@ -375,7 +385,13 @@ export class ImageRenderable extends Renderable<ImageUserData> {
         }
         const tsNanos =
           BigInt(image.timestamp.sec) * 1_000_000_000n + BigInt(image.timestamp.nsec);
-        return await (this.#videoDecoder ??= new H264Decoder()).decode(image.data, tsNanos);
+        // Every frame is decoded (P-frames need their references), but frames
+        // already superseded by a newer one skip the bitmap conversion.
+        return await (this.#videoDecoder ??= new H264Decoder()).decode(
+          image.data,
+          tsNanos,
+          isStale,
+        );
       }
       return await decodeCompressedImageToBitmap(image, resizeWidth);
     }

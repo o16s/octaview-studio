@@ -235,7 +235,13 @@ async function decodeFrame(
     const data = video.data instanceof Uint8Array ? video.data : new Uint8Array(video.data as ArrayBuffer);
     const timestampNanos =
       BigInt(video.timestamp.sec) * 1_000_000_000n + BigInt(video.timestamp.nsec);
-    return await videoDecoder.decode(data, timestampNanos);
+    const bitmap = await videoDecoder.decode(data, timestampNanos);
+    if (!bitmap) {
+      // decode() only returns undefined for stale-marked frames, which the
+      // exporter never uses — guard for the type system.
+      throw new Error("Video frame decode returned no bitmap");
+    }
+    return bitmap;
   }
 
   if (isCompressedImage(schemaName)) {
