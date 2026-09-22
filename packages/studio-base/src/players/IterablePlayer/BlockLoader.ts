@@ -266,7 +266,10 @@ export class BlockLoader {
         // until (inclusive) of the end of of the block
         const untilTime = clampTime(this.#blockIdToEndTime(currentBlockId), this.#start, this.#end);
 
+        // Producer wait: how long the (worker-side) read+decode of one block takes.
+        const readStartMs = performance.now();
         const results = await cursor.readUntil(untilTime);
+        perfStats.count("blocks.readMs", performance.now() - readStartMs);
         // No results means cursor aborted or eof
         if (!results) {
           await cursor.end();
@@ -320,6 +323,14 @@ export class BlockLoader {
           this.#problemManager.removeProblem(problemKey);
 
           const messageSizeInBytes = iterResult.msgEvent.sizeInBytes;
+          // Attribute cache bytes: video preload (ImageMode allFrames) vs the
+          // rest (plot signals). Video sharing the budget can starve plots.
+          perfStats.count(
+            iterResult.msgEvent.schemaName === "foxglove.CompressedVideo"
+              ? "blocks.videoMB"
+              : "blocks.otherMB",
+            messageSizeInBytes / 1e6,
+          );
           totalBlockSizeBytes += messageSizeInBytes;
           arr.push(iterResult.msgEvent);
 

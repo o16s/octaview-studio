@@ -17,6 +17,7 @@ import {
   MessageIteratorArgs,
 } from "@foxglove/studio-base/players/IterablePlayer/IIterableSource";
 import { estimateObjectSize } from "@foxglove/studio-base/players/messageMemoryEstimation";
+import { perfStats } from "@foxglove/studio-base/util/perfStats";
 import { normalizeTopic } from "@foxglove/studio-base/players/normalizeTopic";
 import {
   PlayerProblem,
@@ -184,7 +185,12 @@ export class McapIndexedIterableSource implements IIterableSource {
         continue;
       }
       try {
+        // Producer cost attribution (worker context — logs its own [perf] line):
+        // raw bytes read vs time spent deserializing them.
+        perfStats.count("mcapRead.rawMB", message.data.byteLength / 1e6);
+        const deserializeStartMs = performance.now();
         const msg = channelInfo.parsedChannel.deserialize(message.data) as Record<string, unknown>;
+        perfStats.count("mcapRead.deserializeMs", performance.now() - deserializeStartMs);
         const spec = topicsWithSubscriptionHash.get(channelInfo.topicName);
         const payload = spec?.fields != undefined ? pickFields(msg, spec.fields) : msg;
         const estimatedMemorySize = this.#estimateMessageSize(
