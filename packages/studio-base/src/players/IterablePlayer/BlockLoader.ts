@@ -28,6 +28,14 @@ const log = Log.getLogger(__filename);
 
 export const MEMORY_INFO_PRELOADED_MSGS = "Preloaded messages";
 
+/** The subset of `selection` whose topics are also in `phaseTopics`. */
+function intersectTopics(
+  selection: Immutable<TopicSelection>,
+  phaseTopics: Immutable<TopicSelection>,
+): Immutable<TopicSelection> {
+  return new Map([...selection].filter(([topic]) => phaseTopics.has(topic)));
+}
+
 type BlockLoaderArgs = {
   cacheSizeBytes: number;
   source: IIterableSource;
@@ -36,6 +44,12 @@ type BlockLoaderArgs = {
   maxBlocks: number;
   minBlockDurationNs: number;
   problemManager: PlayerProblemManager;
+  /**
+   * Topics loaded in a second pass, after everything else. Used for bulky
+   * preloads (H.264 video for ImageMode's allFrames) so they cannot starve the
+   * small plot-signal preloads that share this loader and its cache budget.
+   */
+  deferredTopics?: ReadonlySet<string>;
 };
 
 type CacheBlock = MessageBlock & {
@@ -63,6 +77,8 @@ export class BlockLoader {
   #stopped: boolean = false;
   #activeChangeCondvar: Condvar = new Condvar();
   #abortController: AbortController;
+  #deferredTopics: ReadonlySet<string>;
+  #activeTime: Time | undefined;
 
   public constructor(args: BlockLoaderArgs) {
     this.#source = args.source;
@@ -71,6 +87,7 @@ export class BlockLoader {
     this.#maxCacheSize = args.cacheSizeBytes;
     this.#problemManager = args.problemManager;
     this.#abortController = new AbortController();
+    this.#deferredTopics = args.deferredTopics ?? new Set();
 
     const totalNs = Number(toNanoSec(subtractTimes(this.#end, this.#start))) + 1; // +1 since times are inclusive.
     if (totalNs > Number.MAX_SAFE_INTEGER * 0.9) {
@@ -85,6 +102,15 @@ export class BlockLoader {
 
     log.debug(`Block count: ${blockCount}`);
     this.#blocks = Array.from({ length: blockCount });
+  }
+
+  /**
+   * Anchor for the deferred (pass-2) sweep: it starts at the block containing
+   * this time so visible cameras become responsive first. Read at pass start;
+   * a change does not interrupt an in-flight pass.
+   */
+  public setActiveTime(time: Time): void {
+    this.#activeTime = time;
   }
 
   public setTopics(topics: TopicSelection): void {
@@ -204,23 +230,60 @@ export class BlockLoader {
     log.debug("loading blocks", { topics });
 
     const { progress } = args;
+
+    // Pass 1: everything except the deferred (bulky video) topics, so the
+    // small plot-signal preloads complete first and cannot be starved.
+    const priorityTopics = new Map(
+      [...topics].filter(([topic]) => !this.#deferredTopics.has(topic)),
+    );
+    const hasPhases = priorityTopics.size > 0 && priorityTopics.size < topics.size;
+    if (hasPhases) {
+      perfStats.gauge("blocks.phase", 1);
+      if (!(await this.#sweep(topics, priorityTopics, 0, progress))) {
+        return;
+      }
+    }
+
+    // Pass 2: the remaining (deferred) topics, anchored at the playhead's
+    // block so visible cameras become responsive first, then wrapping to the
+    // start. Already-satisfied blocks are skipped cheaply in both sub-ranges.
+    perfStats.gauge("blocks.phase", hasPhases ? 2 : 1);
+    const anchorBlockId = this.#anchorBlockId();
+    if (anchorBlockId > 0) {
+      if (!(await this.#sweep(topics, topics, anchorBlockId, progress))) {
+        return;
+      }
+    }
+    await this.#sweep(topics, topics, 0, progress);
+  }
+
+  /**
+   * Sweep blocks from startBlockId to the end, fetching for each block the
+   * intersection of the block's outstanding topics with phaseTopics.
+   * Returns false when loading should stop entirely (abort, subscription
+   * change, or a full cache).
+   */
+  async #sweep(
+    topics: TopicSelection,
+    phaseTopics: TopicSelection,
+    startBlockId: number,
+    progress: LoadArgs["progress"],
+  ): Promise<boolean> {
     let totalBlockSizeBytes = this.#cacheSize();
 
-    for (let blockId = 0; blockId < this.#blocks.length; ++blockId) {
+    for (let blockId = startBlockId; blockId < this.#blocks.length; ++blockId) {
       // Topics we will fetch for this range
       let topicsToFetch: Immutable<TopicSelection>;
 
-      // Keep looking for a block that needs loading
+      // Keep looking for a block that needs loading in this phase
       {
         const existingBlock = this.#blocks[blockId];
+        topicsToFetch = intersectTopics(existingBlock?.needTopics ?? topics, phaseTopics);
 
-        // The current block has everything, so we can move to the next block
-        if (existingBlock?.needTopics.size === 0) {
+        // The current block has everything this phase wants, move to the next block
+        if (topicsToFetch.size === 0) {
           continue;
         }
-
-        // The current block needs some topics so those will be come the topics we need to fetch
-        topicsToFetch = existingBlock?.needTopics ?? topics;
       }
 
       // blockId is the first block that needs loading
@@ -229,7 +292,7 @@ export class BlockLoader {
       let endBlockId = blockId;
       for (let endIdx = blockId + 1; endIdx < this.#blocks.length; ++endIdx) {
         // if needtopics is undefined cause there's no block, then needTopics is all topics
-        const needTopics = this.#blocks[endIdx]?.needTopics ?? topics;
+        const needTopics = intersectTopics(this.#blocks[endIdx]?.needTopics ?? topics, phaseTopics);
 
         // The topics we need to fetch no longer match the topics we need so we stop the range
         if (!_.isEqual(topicsToFetch, needTopics)) {
@@ -273,14 +336,14 @@ export class BlockLoader {
         // No results means cursor aborted or eof
         if (!results) {
           await cursor.end();
-          return;
+          return false;
         }
 
         // While we were waiting for cursor data the topics we need to be loading may have changed.
         // Check whether the topics are changed and abort this loading instance because the results
         // may no longer be valid for the data we should be loading.
         if (!_.isEqual(topics, this.#topics)) {
-          return;
+          return false;
         }
 
         const messagesByTopic: Record<string, MessageEvent[]> = {};
@@ -355,7 +418,7 @@ export class BlockLoader {
             // We need to emit progress here so the player will emit a new state
             // containing the problem.
             progress(this.#calculateProgress(topics, totalBlockSizeBytes));
-            return;
+            return false;
           }
         }
 
@@ -373,8 +436,16 @@ export class BlockLoader {
         const newBlockSizeInBytes =
           (existingBlock?.sizeInBytes ?? 0) - overridenBlockMessagesSize + sizeInBytes;
 
+        // Only the topics actually fetched are complete; anything else the
+        // block still needed (e.g. deferred topics awaiting pass 2) remains
+        // outstanding. For a full fetch this is the same empty map as before.
+        const remainingTopics = new Map(
+          [...(existingBlock?.needTopics ?? topics)].filter(
+            ([topic]) => !topicsToFetch.has(topic),
+          ),
+        );
         this.#blocks[currentBlockId] = {
-          needTopics: new Map(),
+          needTopics: remainingTopics,
           messagesByTopic: {
             ...existingBlock?.messagesByTopic,
             // Any new topics override the same previous topic
@@ -393,6 +464,21 @@ export class BlockLoader {
       await cursor.end();
       blockId = endBlockId;
     }
+
+    return true;
+  }
+
+  /** Block index containing #activeTime, or 0 when unset. */
+  #anchorBlockId(): number {
+    if (!this.#activeTime || this.#blocks.length === 0) {
+      return 0;
+    }
+    const clamped = clampTime(this.#activeTime, this.#start, this.#end);
+    const offsetNs = toNanoSec(subtractTimes(clamped, this.#start));
+    return Math.min(
+      this.#blocks.length - 1,
+      Number(offsetNs / BigInt(this.#blockDurationNanos)),
+    );
   }
 
   #calculateProgress(topics: TopicSelection, currentCacheSize: number): Progress {

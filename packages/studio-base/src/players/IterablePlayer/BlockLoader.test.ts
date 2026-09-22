@@ -673,3 +673,192 @@ describe("BlockLoader", () => {
     expect(firstBlockLoad?.[1]?.messagesByTopic["a"]).toBe(lastBlocks?.[1]?.messagesByTopic["a"]);
   });
 });
+
+describe("BlockLoader two-phase (plot-topics-first)", () => {
+  // A source holding two topics across the whole range, recording every
+  // messageIterator call so tests can assert fetch ordering. Messages respect
+  // args.topics and args.start/end like a real indexed source.
+  function makeRecordingSource(msgEvents: MessageEvent[]) {
+    const source = new TestSource();
+    const calls: Array<{ topics: string[]; startSec: number }> = [];
+    source.messageIterator = async function* messageIterator(
+      args: MessageIteratorArgs,
+    ): AsyncIterableIterator<Readonly<IteratorResult>> {
+      calls.push({
+        topics: Array.from(args.topics.keys()).sort(),
+        startSec: args.start?.sec ?? 0,
+      });
+      // Emit in receiveTime order, like a real indexed source — IteratorCursor
+      // depends on time-ordered yields.
+      const selected = msgEvents
+        .filter(
+          (m) =>
+            args.topics.has(m.topic) &&
+            (!args.start || m.receiveTime.sec >= args.start.sec) &&
+            (!args.end || m.receiveTime.sec <= args.end.sec),
+        )
+        .sort((a, b) => a.receiveTime.sec - b.receiveTime.sec);
+      for (const msgEvent of selected) {
+        yield { type: "message-event", msgEvent };
+      }
+    };
+    return { source, calls };
+  }
+
+  function makeMessages(topic: string, sizeInBytes: number, schemaName: string): MessageEvent[] {
+    const out: MessageEvent[] = [];
+    for (let i = 0; i < 10; i += 3) {
+      out.push({
+        topic,
+        receiveTime: { sec: i, nsec: 0 },
+        message: undefined,
+        sizeInBytes,
+        schemaName,
+      });
+    }
+    return out;
+  }
+
+  it("loads priority topics across the whole range before any deferred topic", async () => {
+    const msgs = [...makeMessages("plot", 1, "foo"), ...makeMessages("video", 1, "cv")];
+    const { source, calls } = makeRecordingSource(msgs);
+
+    const loader = new BlockLoader({
+      maxBlocks: 5,
+      cacheSizeBytes: 100,
+      minBlockDurationNs: 1,
+      source,
+      start: { sec: 0, nsec: 0 },
+      end: { sec: 9, nsec: 0 },
+      problemManager: new PlayerProblemManager(),
+      deferredTopics: new Set(["video"]),
+    });
+
+    loader.setTopics(mockTopicSelection("plot", "video"));
+    await loader.startLoading({
+      progress: async (progress) => {
+        const blocks = progress.messageCache?.blocks ?? [];
+        const complete = blocks.every(
+          (b) => b != undefined && b.messagesByTopic["plot"] && b.messagesByTopic["video"],
+        );
+        if (complete) {
+          await loader.stopLoading();
+        }
+      },
+    });
+
+    // Pass 1 fetched only the priority topic; deferred topic came strictly after.
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(calls[0]!.topics).toEqual(["plot"]);
+    const firstVideoCall = calls.findIndex((c) => c.topics.includes("video"));
+    expect(firstVideoCall).toBeGreaterThan(0);
+    for (const call of calls.slice(firstVideoCall)) {
+      expect(call.topics).toEqual(["video"]);
+    }
+  });
+
+  it("keeps single-pass behavior when no topics are deferred", async () => {
+    const msgs = [...makeMessages("a", 1, "foo"), ...makeMessages("b", 1, "bar")];
+    const { source, calls } = makeRecordingSource(msgs);
+
+    const loader = new BlockLoader({
+      maxBlocks: 5,
+      cacheSizeBytes: 100,
+      minBlockDurationNs: 1,
+      source,
+      start: { sec: 0, nsec: 0 },
+      end: { sec: 9, nsec: 0 },
+      problemManager: new PlayerProblemManager(),
+    });
+
+    loader.setTopics(mockTopicSelection("a", "b"));
+    await loader.startLoading({
+      progress: async (progress) => {
+        const blocks = progress.messageCache?.blocks ?? [];
+        const complete = blocks.every(
+          (b) => b != undefined && b.messagesByTopic["a"] && b.messagesByTopic["b"],
+        );
+        if (complete) {
+          await loader.stopLoading();
+        }
+      },
+    });
+
+    // Both topics fetched together, exactly as the single-phase loader does.
+    expect(calls[0]!.topics).toEqual(["a", "b"]);
+  });
+
+  it("keeps completed priority data when the deferred pass fills the cache", async () => {
+    const msgs = [...makeMessages("plot", 1, "foo"), ...makeMessages("video", 10, "cv")];
+    const { source } = makeRecordingSource(msgs);
+    const problemManager = new PlayerProblemManager();
+
+    const loader = new BlockLoader({
+      maxBlocks: 5,
+      cacheSizeBytes: 8, // fits the 4 plot bytes; first 10-byte video message overflows
+      minBlockDurationNs: 1,
+      source,
+      start: { sec: 0, nsec: 0 },
+      end: { sec: 9, nsec: 0 },
+      problemManager,
+      deferredTopics: new Set(["video"]),
+    });
+
+    loader.setTopics(mockTopicSelection("plot", "video"));
+    let sawCacheFull = false;
+    let lastBlocks: Immutable<(MessageBlock | undefined)[]> = [];
+    await loader.startLoading({
+      progress: async (progress) => {
+        lastBlocks = progress.messageCache?.blocks ?? [];
+        if (problemManager.problems().some((p) => p.message.startsWith("Cache is full"))) {
+          sawCacheFull = true;
+          await loader.stopLoading();
+        }
+      },
+    });
+    expect(sawCacheFull).toBe(true);
+    // Plot data from pass 1 must still be present in the blocks.
+    const plotBlocks = lastBlocks.filter((b) => (b?.messagesByTopic["plot"]?.length ?? 0) > 0);
+    expect(plotBlocks.length).toBeGreaterThan(0);
+    consoleErrorMock.mockClear();
+  });
+
+  it("anchors the deferred pass at the active time", async () => {
+    const msgs = [...makeMessages("plot", 1, "foo"), ...makeMessages("video", 1, "cv")];
+    const { source, calls } = makeRecordingSource(msgs);
+
+    const loader = new BlockLoader({
+      maxBlocks: 5,
+      cacheSizeBytes: 100,
+      minBlockDurationNs: 1,
+      source,
+      start: { sec: 0, nsec: 0 },
+      end: { sec: 9, nsec: 0 },
+      problemManager: new PlayerProblemManager(),
+      deferredTopics: new Set(["video"]),
+    });
+
+    loader.setActiveTime({ sec: 5, nsec: 0 });
+    loader.setTopics(mockTopicSelection("plot", "video"));
+    await loader.startLoading({
+      progress: async (progress) => {
+        const blocks = progress.messageCache?.blocks ?? [];
+        const complete = blocks.every(
+          (b) => b != undefined && b.messagesByTopic["plot"] && b.messagesByTopic["video"],
+        );
+        if (complete) {
+          await loader.stopLoading();
+        }
+      },
+    });
+
+    // The first deferred fetch starts at the anchor block (the block holding
+    // sec 5), not at the beginning of the range.
+    const videoCalls = calls.filter((c) => c.topics.includes("video"));
+    expect(videoCalls.length).toBeGreaterThanOrEqual(2);
+    expect(videoCalls[0]!.startSec).toBeGreaterThan(0);
+    expect(videoCalls[0]!.startSec).toBeLessThanOrEqual(5);
+    // The earlier region is still filled by a later wrap-around fetch.
+    expect(videoCalls.some((c) => c.startSec === 0)).toBe(true);
+  });
+});

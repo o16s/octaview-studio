@@ -530,7 +530,17 @@ export class IterablePlayer implements Player {
             maxBlocks: MAX_BLOCKS,
             minBlockDurationNs: MIN_MEM_CACHE_BLOCK_SIZE_NS,
             problemManager: this.#problemManager,
+            // Bulky video preloads (ImageMode allFrames) load after everything
+            // else so they cannot starve the small plot-signal preloads.
+            deferredTopics: new Set(
+              this.#providerTopics
+                .filter((topic) => topic.schemaName === "foxglove.CompressedVideo")
+                .map((topic) => topic.name),
+            ),
           });
+          if (this.#currentTime) {
+            this.#blockLoader.setActiveTime(this.#currentTime);
+          }
         } catch (err) {
           log.error(err);
 
@@ -700,6 +710,10 @@ export class IterablePlayer implements Player {
 
     // Ensure the seek time is always within the data source bounds
     const targetTime = clampTime(this.#seekTarget, this.#start, this.#end);
+
+    // Anchor the deferred (video) preload pass at the seek target so visible
+    // cameras become responsive there first. Takes effect on the next pass.
+    this.#blockLoader?.setActiveTime(targetTime);
 
     this.#lastMessageEvent = undefined;
 
