@@ -16,20 +16,19 @@ import { stringToRgba } from "@foxglove/studio-base/panels/ThreeDeeRender/color"
 import { WorkerImageDecoder } from "@foxglove/studio-base/panels/ThreeDeeRender/renderables/Images/WorkerImageDecoder";
 import { projectPixel } from "@foxglove/studio-base/panels/ThreeDeeRender/renderables/projections";
 import { RosValue } from "@foxglove/studio-base/players/types";
-
-import { AnyImage } from "./ImageTypes";
 import { perfStats } from "@foxglove/studio-base/util/perfStats";
 
 import { H264Decoder, NoFrameError, isVideoFormat, containsKeyframe } from "./H264Decoder";
+import { AnyImage } from "./ImageTypes";
 import { decodeCompressedImageToBitmap } from "./decodeImage";
 import { CameraInfo } from "../../ros";
+import { t3D } from "../../t3D";
 import {
   DECODE_IMAGE_ERR_KEY,
   IMAGE_MODE_HUD_GROUP_ID,
   IMAGE_TOPIC_PATH,
   WAITING_FOR_KEYFRAME_HUD_ID,
 } from "../ImageMode/constants";
-import { t3D } from "../../t3D";
 import { ColorModeSettings } from "../colorMode";
 
 const log = Logger.getLogger(__filename);
@@ -233,7 +232,7 @@ export class ImageRenderable extends Renderable<ImageUserData> {
         }
         // NoFrameError means the decoder is waiting for a keyframe — show HUD and attempt priming
         if (err instanceof NoFrameError) {
-          if ((err.message as string).includes("keyframe")) {
+          if (err.message.includes("keyframe")) {
             this.renderer.hud.displayIfTrue(true, {
               id: WAITING_FOR_KEYFRAME_HUD_ID,
               group: IMAGE_MODE_HUD_GROUP_ID,
@@ -328,7 +327,11 @@ export class ImageRenderable extends Renderable<ImageUserData> {
         if (this.isDisposed()) {
           break;
         }
-        const image = msg.message as { data: Uint8Array; format: string; timestamp: { sec: number; nsec: number } };
+        const image = msg.message as {
+          data: Uint8Array;
+          format: string;
+          timestamp: { sec: number; nsec: number };
+        };
         const tsNanos = BigInt(image.timestamp.sec) * 1_000_000_000n + BigInt(image.timestamp.nsec);
         try {
           const bitmap = await primingDecoder.decode(image.data, tsNanos);
@@ -383,8 +386,7 @@ export class ImageRenderable extends Renderable<ImageUserData> {
             "VideoDecoder is not available. H.264 decoding requires a secure context (HTTPS).",
           );
         }
-        const tsNanos =
-          BigInt(image.timestamp.sec) * 1_000_000_000n + BigInt(image.timestamp.nsec);
+        const tsNanos = BigInt(image.timestamp.sec) * 1_000_000_000n + BigInt(image.timestamp.nsec);
         // Every frame is decoded (P-frames need their references), but frames
         // already superseded by a newer one skip the bitmap conversion.
         return await (this.#videoDecoder ??= new H264Decoder()).decode(

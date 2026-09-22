@@ -24,8 +24,8 @@ describe("decidePanelClickSelection", () => {
   });
 
   it("replaces the selection with just this panel on a plain click of an unselected panel", () => {
-    expect(
-      decidePanelClickSelection({ metaKey: false, shiftKey: false, isSelected: false }),
-    ).toBe("replace");
+    expect(decidePanelClickSelection({ metaKey: false, shiftKey: false, isSelected: false })).toBe(
+      "replace",
+    );
   });
 });

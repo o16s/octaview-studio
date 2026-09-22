@@ -89,7 +89,9 @@ async function decompressDeflateRaw(compressed: Uint8Array): Promise<Uint8Array>
   const chunks: Uint8Array[] = [];
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      break;
+    }
     chunks.push(value as Uint8Array);
   }
 

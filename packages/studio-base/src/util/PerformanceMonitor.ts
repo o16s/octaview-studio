@@ -153,6 +153,7 @@ export class PerformanceMonitor {
     if (snap.heapUsedMB != undefined && snap.heapLimitMB != undefined) {
       parts.push(`heap=${snap.heapUsedMB}/${snap.heapLimitMB}MB (${snap.heapPercent!}%)`);
     }
+    // eslint-disable-next-line no-restricted-syntax -- [perf] lines must show at the console's default verbosity (debug is hidden)
     console.log(`[perf] ${parts.join(" ")}`);
 
     // Alert checks

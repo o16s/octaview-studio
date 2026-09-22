@@ -2,8 +2,8 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import { buildStoreZip } from "./extractZip.test.helpers";
 import { extractFilesFromZip } from "./extractZip";
+import { buildStoreZip } from "./extractZip.test.helpers";
 
 describe("extractFilesFromZip", () => {
   it("extracts files from a Store-mode ZIP", async () => {
@@ -22,9 +22,7 @@ describe("extractFilesFromZip", () => {
   });
 
   it("strips directory prefixes from filenames", async () => {
-    const zip = buildStoreZip([
-      { name: "folder/sub/recording.mcap", data: new Uint8Array([10]) },
-    ]);
+    const zip = buildStoreZip([{ name: "folder/sub/recording.mcap", data: new Uint8Array([10]) }]);
     const zipFile = new File([zip], "archive.zip");
 
     const files = await extractFilesFromZip(zipFile);

@@ -4,12 +4,12 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
-import sendNotification from "@foxglove/studio-base/util/sendNotification";
 import {
   AlertType,
   PerformanceMonitor,
   PerformanceSnapshot,
 } from "@foxglove/studio-base/util/PerformanceMonitor";
+import sendNotification from "@foxglove/studio-base/util/sendNotification";
 
 const ALERT_COOLDOWN_MS = 60_000;
 

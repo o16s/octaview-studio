@@ -146,7 +146,9 @@ function getAboutItems(lang: string) {
       {
         subheader: "External resources",
         links: [
-          ...(isDesktopApp() ? [] : [{ title: "Desktop app", url: "https://octaview.ai/download" }]),
+          ...(isDesktopApp()
+            ? []
+            : [{ title: "Desktop app", url: "https://octaview.ai/download" }]),
           { title: "Browse docs", url: `https://octaview.ai/${lang}/docs` },
         ],
       },
@@ -155,9 +157,7 @@ function getAboutItems(lang: string) {
       "products",
       {
         subheader: "Products",
-        links: [
-          { title: "octaview Studio", url: "https://octaview.ai" },
-        ],
+        links: [{ title: "octaview Studio", url: "https://octaview.ai" }],
       },
     ],
     [
@@ -175,7 +175,10 @@ function getAboutItems(lang: string) {
       {
         subheader: "Legal",
         links: [
-          { title: "License terms", url: "https://github.com/o16s/octaview-studio/blob/main/LICENSE" },
+          {
+            title: "License terms",
+            url: "https://github.com/o16s/octaview-studio/blob/main/LICENSE",
+          },
           { title: "Privacy policy", url: "https://octaview.ai/privacy" },
         ],
       },

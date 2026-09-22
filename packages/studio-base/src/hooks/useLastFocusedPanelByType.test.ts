@@ -5,10 +5,7 @@
 
 import { renderHook } from "@testing-library/react";
 
-import {
-  setLastFocusedPanel,
-  useLastFocusedPanelByType,
-} from "./useLastFocusedPanelByType";
+import { setLastFocusedPanel, useLastFocusedPanelByType } from "./useLastFocusedPanelByType";
 
 describe("useLastFocusedPanelByType", () => {
   it("returns undefined for a type that has never been focused", () => {

@@ -9,8 +9,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: "function",
     function: {
       name: "list_topics",
-      description:
-        "List all available topics in the current data source with their schema names.",
+      description: "List all available topics in the current data source with their schema names.",
       parameters: { type: "object", properties: {}, required: [] },
     },
   },
@@ -18,12 +17,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: "function",
     function: {
       name: "search_topics",
-      description:
-        "Search topics by name or schema type. Returns matching topics.",
+      description: "Search topics by name or schema type. Returns matching topics.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search query to match against topic name or schema" },
+          query: {
+            type: "string",
+            description: "Search query to match against topic name or schema",
+          },
         },
         required: ["query"],
       },
@@ -72,8 +73,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: "function",
     function: {
       name: "get_current_layout",
-      description:
-        "Get the current layout structure (mosaic tree) and panel configurations.",
+      description: "Get the current layout structure (mosaic tree) and panel configurations.",
       parameters: { type: "object", properties: {}, required: [] },
     },
   },
@@ -81,8 +81,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: "function",
     function: {
       name: "add_panel",
-      description:
-        "Add a new panel to the current layout. Returns the new panel ID.",
+      description: "Add a new panel to the current layout. Returns the new panel ID.",
       parameters: {
         type: "object",
         properties: {
@@ -163,8 +162,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         type: "object",
         properties: {
           topic: { type: "string", description: "Exact topic name" },
-          field: { type: "string", description: "Dot-separated field path, e.g. 'linear_acceleration.x'" },
-          limit: { type: "number", description: "Max number of points to return (default 5000). Data is downsampled if exceeded." },
+          field: {
+            type: "string",
+            description: "Dot-separated field path, e.g. 'linear_acceleration.x'",
+          },
+          limit: {
+            type: "number",
+            description:
+              "Max number of points to return (default 5000). Data is downsampled if exceeded.",
+          },
         },
         required: ["topic", "field"],
       },
@@ -197,8 +203,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         properties: {
           topic: { type: "string", description: "Exact topic name" },
           field: { type: "string", description: "Dot-separated field path" },
-          threshold: { type: "number", description: "Absolute threshold — peaks must exceed this value" },
-          stddev: { type: "number", description: "Standard deviation multiplier — threshold = mean + N*stddev. Use instead of absolute threshold." },
+          threshold: {
+            type: "number",
+            description: "Absolute threshold — peaks must exceed this value",
+          },
+          stddev: {
+            type: "number",
+            description:
+              "Standard deviation multiplier — threshold = mean + N*stddev. Use instead of absolute threshold.",
+          },
         },
         required: ["topic", "field"],
       },
@@ -213,8 +226,16 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       parameters: {
         type: "object",
         properties: {
-          from: { type: "number", description: "Start of time range filter (unix seconds). Files ending before this are excluded." },
-          to: { type: "number", description: "End of time range filter (unix seconds). Files starting after this are excluded." },
+          from: {
+            type: "number",
+            description:
+              "Start of time range filter (unix seconds). Files ending before this are excluded.",
+          },
+          to: {
+            type: "number",
+            description:
+              "End of time range filter (unix seconds). Files starting after this are excluded.",
+          },
           pattern: { type: "string", description: "Substring match on file path/name" },
         },
         required: [],
@@ -249,12 +270,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       parameters: {
         type: "object",
         properties: {
-          panelId: { type: "string", description: "Panel ID of the Plot panel (e.g. 'Plot!abc123')" },
+          panelId: {
+            type: "string",
+            description: "Panel ID of the Plot panel (e.g. 'Plot!abc123')",
+          },
           minX: { type: "number", description: "Minimum X-axis value (elapsed seconds)" },
           maxX: { type: "number", description: "Maximum X-axis value (elapsed seconds)" },
           minY: { type: "number", description: "Minimum Y-axis value" },
           maxY: { type: "number", description: "Maximum Y-axis value" },
-          rangeSeconds: { type: "number", description: "Set a rolling time window of N seconds (follows playback). Overrides static X bounds." },
+          rangeSeconds: {
+            type: "number",
+            description:
+              "Set a rolling time window of N seconds (follows playback). Overrides static X bounds.",
+          },
         },
         required: ["panelId"],
       },
@@ -269,7 +297,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       parameters: {
         type: "object",
         properties: {
-          panelId: { type: "string", description: "Panel ID of the Plot panel (e.g. 'Plot!abc123')" },
+          panelId: {
+            type: "string",
+            description: "Panel ID of the Plot panel (e.g. 'Plot!abc123')",
+          },
         },
         required: ["panelId"],
       },
@@ -284,7 +315,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       parameters: {
         type: "object",
         properties: {
-          panelId: { type: "string", description: "Panel ID of the Plot panel (e.g. 'Plot!abc123')" },
+          panelId: {
+            type: "string",
+            description: "Panel ID of the Plot panel (e.g. 'Plot!abc123')",
+          },
           annotations: {
             type: "array",
             items: {

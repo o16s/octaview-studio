@@ -20,6 +20,5 @@ type DesktopBridge = {
 };
 
 export function getSecureStorage(): SecureStorage | undefined {
-  return (globalThis as unknown as { desktopBridge?: DesktopBridge }).desktopBridge
-    ?.secureStorage;
+  return (globalThis as unknown as { desktopBridge?: DesktopBridge }).desktopBridge?.secureStorage;
 }

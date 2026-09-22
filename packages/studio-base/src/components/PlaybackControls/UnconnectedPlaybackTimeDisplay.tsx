@@ -191,7 +191,11 @@ export function UnconnectedPlaybackTimeDisplay({
   const timeOfDayString = useMemo(
     () =>
       currentTime
-        ? `${formatDate(currentTime, timezone)} ${appTimeFormat.timeFormat === "TOD24" ? formatTime24(currentTime, timezone) : formatTime(currentTime, timezone)}`
+        ? `${formatDate(currentTime, timezone)} ${
+            appTimeFormat.timeFormat === "TOD24"
+              ? formatTime24(currentTime, timezone)
+              : formatTime(currentTime, timezone)
+          }`
         : undefined,
     [appTimeFormat.timeFormat, currentTime, timezone],
   );

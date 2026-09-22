@@ -4,8 +4,7 @@
 
 export const addPanel = {
   addPanel: "Agregar panel",
-  noLayoutSelected:
-    "<selectLayoutLink>Seleccione un diseño</selectLayoutLink> para comenzar.",
+  noLayoutSelected: "<selectLayoutLink>Seleccione un diseño</selectLayoutLink> para comenzar.",
   noPanelsMatchSearchCriteria: "Ningún panel coincide con los criterios de búsqueda.",
   searchPanels: "Buscar paneles",
   selectPanelToAddToLayout: "Seleccione un panel a continuación para agregarlo a su diseño.",

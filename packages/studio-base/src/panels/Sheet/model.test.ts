@@ -76,9 +76,9 @@ describe("sourceDisplayName", () => {
   });
 
   it("uses the decoded base name for url sources", () => {
-    expect(sourceDisplayName({ kind: "urls", sourceId: "x", urls: ["http://h/a/b/run.mcap"] })).toBe(
-      "run.mcap",
-    );
+    expect(
+      sourceDisplayName({ kind: "urls", sourceId: "x", urls: ["http://h/a/b/run.mcap"] }),
+    ).toBe("run.mcap");
     // Encoded absolute path in one segment (desktop mcap-local:// style).
     expect(
       sourceDisplayName({
@@ -120,9 +120,9 @@ describe("makeBaseOpener", () => {
 
   it("returns an opener for an MCAP file source", () => {
     const file = new File([], "run.MCAP");
-    expect(typeof makeBaseOpener({ kind: "files", sourceId: "mcap-local-file", files: [file] })).toBe(
-      "function",
-    );
+    expect(
+      typeof makeBaseOpener({ kind: "files", sourceId: "mcap-local-file", files: [file] }),
+    ).toBe("function");
   });
 
   it("is undefined for no source or a non-MCAP source", () => {

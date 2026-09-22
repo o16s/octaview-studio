@@ -12,8 +12,8 @@
 const READAHEAD_SIZE = 4 * 1024 * 1024;
 
 export class BlobReadable {
-  #window: Uint8Array | undefined;
-  #windowStart = 0;
+  #buf: Uint8Array | undefined;
+  #bufStart = 0;
 
   public constructor(private file: Blob) {}
   public async size(): Promise<bigint> {
@@ -33,14 +33,18 @@ export class BlobReadable {
       return new Uint8Array(await this.file.slice(start, start + length).arrayBuffer());
     }
 
-    const win = this.#window;
-    if (win == undefined || start < this.#windowStart || start + length > this.#windowStart + win.length) {
+    const win = this.#buf;
+    if (
+      win == undefined ||
+      start < this.#bufStart ||
+      start + length > this.#bufStart + win.length
+    ) {
       const end = Math.min(this.file.size, start + Math.max(length, READAHEAD_SIZE));
-      this.#window = new Uint8Array(await this.file.slice(start, end).arrayBuffer());
-      this.#windowStart = start;
+      this.#buf = new Uint8Array(await this.file.slice(start, end).arrayBuffer());
+      this.#bufStart = start;
     }
 
     // Copy out so callers never hold references into the (reused) window.
-    return this.#window!.slice(start - this.#windowStart, start - this.#windowStart + length);
+    return this.#buf!.slice(start - this.#bufStart, start - this.#bufStart + length);
   }
 }

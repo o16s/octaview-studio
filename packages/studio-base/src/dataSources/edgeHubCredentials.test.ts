@@ -14,9 +14,7 @@ describe("serializeEdgeHubConnections / parseEdgeHubConnections", () => {
       { ip: "192.168.1.100", token: "abc123" },
       { ip: "bl335", token: "def456" },
     ];
-    expect(parseEdgeHubConnections(serializeEdgeHubConnections(connections))).toEqual(
-      connections,
-    );
+    expect(parseEdgeHubConnections(serializeEdgeHubConnections(connections))).toEqual(connections);
   });
 
   it("round-trips an empty list", () => {
@@ -63,12 +61,10 @@ describe("upsertEdgeHubConnection", () => {
       { ip: "192.168.1.100", token: "old-token" },
       { ip: "10.0.0.1", token: "xyz789" },
     ];
-    expect(upsertEdgeHubConnection(existing, { ip: "192.168.1.100", token: "new-token" })).toEqual(
-      [
-        { ip: "192.168.1.100", token: "new-token" },
-        { ip: "10.0.0.1", token: "xyz789" },
-      ],
-    );
+    expect(upsertEdgeHubConnection(existing, { ip: "192.168.1.100", token: "new-token" })).toEqual([
+      { ip: "192.168.1.100", token: "new-token" },
+      { ip: "10.0.0.1", token: "xyz789" },
+    ]);
   });
 
   it("starts a new list when given an empty one", () => {

@@ -4,8 +4,8 @@
 
 const { app, BrowserWindow, ipcMain, protocol, safeStorage, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
-const fs = require("fs/promises");
 const fsSync = require("fs");
+const fs = require("fs/promises");
 const path = require("path");
 const { Readable } = require("stream");
 
@@ -232,7 +232,7 @@ function setupAutoUpdater() {
   });
 
   // Check for updates after a short delay, then every 30 minutes
-  setTimeout(() => autoUpdater.checkForUpdates(), 5_000);
+  setTimeout(() => autoUpdater.checkForUpdates(), 5000);
   setInterval(() => autoUpdater.checkForUpdates(), 30 * 60 * 1000);
 }
 

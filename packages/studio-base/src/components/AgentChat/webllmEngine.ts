@@ -37,9 +37,7 @@ export function getWebLLMStatus(): WebLLMStatus {
   return currentStatus;
 }
 
-export function subscribeWebLLMStatus(
-  listener: (status: WebLLMStatus) => void,
-): () => void {
+export function subscribeWebLLMStatus(listener: (status: WebLLMStatus) => void): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
@@ -56,7 +54,7 @@ export async function initWebLLMEngine(
 
   // Deduplicate concurrent calls for the same model+context
   if (loadingPromise && loadingModelId === modelId && loadingContextSize === contextSize) {
-    return loadingPromise;
+    return await loadingPromise;
   }
 
   if (currentEngine) {
@@ -72,15 +70,22 @@ export async function initWebLLMEngine(
 
   const promise = (async () => {
     const { CreateMLCEngine } = await import("@mlc-ai/web-llm");
-    const chatOpts = contextSize ? { context_window_size: contextSize } : undefined;
-    const engine = (await CreateMLCEngine(modelId, {
-      initProgressCallback: (progress: { text: string; progress: number }) => {
-        // Only update status if this load is still the current one
-        if (initGeneration === generation) {
-          setStatus({ state: "loading", progress: progress.progress, text: progress.text });
-        }
+    const chatOpts =
+      contextSize != undefined && contextSize !== 0
+        ? { context_window_size: contextSize }
+        : undefined;
+    const engine = (await CreateMLCEngine(
+      modelId,
+      {
+        initProgressCallback: (progress: { text: string; progress: number }) => {
+          // Only update status if this load is still the current one
+          if (initGeneration === generation) {
+            setStatus({ state: "loading", progress: progress.progress, text: progress.text });
+          }
+        },
       },
-    }, chatOpts)) as EngineWithUnload;
+      chatOpts,
+    )) as EngineWithUnload;
 
     // If unload was called (or a different model started) while we were loading,
     // don't install this engine — it's stale.

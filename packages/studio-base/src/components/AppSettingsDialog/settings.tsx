@@ -32,15 +32,16 @@ import { makeStyles } from "tss-react/mui";
 import { filterMap } from "@foxglove/den/collection";
 import { AppSetting } from "@foxglove/studio-base/AppSetting";
 import OsContextSingleton from "@foxglove/studio-base/OsContextSingleton";
+import { getModelsForRAM } from "@foxglove/studio-base/components/AgentChat/webllmModels";
+import Stack from "@foxglove/studio-base/components/Stack";
+import { useAppTimeFormat } from "@foxglove/studio-base/hooks";
+import { useAppConfigurationValue } from "@foxglove/studio-base/hooks/useAppConfigurationValue";
+import { Language } from "@foxglove/studio-base/i18n";
 import {
   DEFAULT_BLOCK_CACHE_SIZE_MB,
   MAX_BLOCK_CACHE_SIZE_MB,
   MIN_BLOCK_CACHE_SIZE_MB,
 } from "@foxglove/studio-base/players/IterablePlayer/blockCacheSize";
-import Stack from "@foxglove/studio-base/components/Stack";
-import { useAppTimeFormat } from "@foxglove/studio-base/hooks";
-import { useAppConfigurationValue } from "@foxglove/studio-base/hooks/useAppConfigurationValue";
-import { Language } from "@foxglove/studio-base/i18n";
 import { reportError } from "@foxglove/studio-base/reportError";
 import { LaunchPreferenceValue } from "@foxglove/studio-base/types/LaunchPreferenceValue";
 import { TimeDisplayMethod } from "@foxglove/studio-base/types/panels";
@@ -437,13 +438,14 @@ export function AgentSettings(): JSX.Element {
   const [webllmModel = "", setWebllmModel] = useAppConfigurationValue<string>(
     AppSetting.AGENT_WEBLLM_MODEL,
   );
-  const [ctxSize, setCtxSize] = useAppConfigurationValue<number>(
-    AppSetting.AGENT_WEBLLM_CTX_SIZE,
-  );
+  const [ctxSize, setCtxSize] = useAppConfigurationValue<number>(AppSetting.AGENT_WEBLLM_CTX_SIZE);
   const [ramTier, setRamTier] = useState<number>(8);
-  const [webllmStatus, setWebllmStatus] = useState<
-    { state: string; progress?: number; text?: string; error?: string }
-  >({ state: "idle" });
+  const [webllmStatus, setWebllmStatus] = useState<{
+    state: string;
+    progress?: number;
+    text?: string;
+    error?: string;
+  }>({ state: "idle" });
 
   const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator;
 
@@ -464,16 +466,7 @@ export function AgentSettings(): JSX.Element {
     return () => unsub?.();
   }, []);
 
-  const availableModels = useMemo(() => {
-    // Dynamic import would be async; use static import for the model catalog
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { getModelsForRAM } = require("@foxglove/studio-base/components/AgentChat/webllmModels") as typeof import("@foxglove/studio-base/components/AgentChat/webllmModels");
-      return getModelsForRAM(ramTier);
-    } catch {
-      return [];
-    }
-  }, [ramTier]);
+  const availableModels = useMemo(() => getModelsForRAM(ramTier), [ramTier]);
 
   return (
     <Stack gap={1.5}>
@@ -534,7 +527,9 @@ export function AgentSettings(): JSX.Element {
           <Select
             size="small"
             value={ramTier}
-            onChange={(e) => setRamTier(e.target.value as number)}
+            onChange={(e) => {
+              setRamTier(e.target.value as number);
+            }}
             fullWidth
           >
             <MenuItem value={8}>8 GB RAM</MenuItem>

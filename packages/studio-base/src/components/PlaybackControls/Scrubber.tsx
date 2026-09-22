@@ -218,12 +218,7 @@ export default function Scrubber(props: Props): JSX.Element {
           // Anchor tooltip at the top of the seeker line (top of outerContainer)
           // instead of at the mouse cursor, so it doesn't obscure source range bars.
           const containerTop = outerContainerRef.current?.getBoundingClientRect().top ?? 0;
-          return new DOMRect(
-            latestHoverInfo.current?.clientX ?? 0,
-            containerTop,
-            0,
-            0,
-          );
+          return new DOMRect(latestHoverInfo.current?.clientX ?? 0, containerTop, 0, 0);
         },
       },
     }),
@@ -239,7 +234,11 @@ export default function Scrubber(props: Props): JSX.Element {
   const totalDuration = startTime && endTime ? toSec(subtractTimes(endTime, startTime)) : 0;
 
   // Assign lanes for overlapping source ranges (greedy interval scheduling)
-  const hasSourceRanges = sourceRanges != undefined && sourceRanges.length > 1 && startTime != undefined && totalDuration > 0;
+  const hasSourceRanges =
+    sourceRanges != undefined &&
+    sourceRanges.length > 1 &&
+    startTime != undefined &&
+    totalDuration > 0;
 
   const sourceLanes = useMemo(() => {
     if (!sourceRanges || sourceRanges.length <= 1) {
@@ -280,7 +279,7 @@ export default function Scrubber(props: Props): JSX.Element {
       )}
 
       {/* Source range lanes (above main scrubber) */}
-      {hasSourceRanges && sourceRanges != undefined && startTime != undefined && (
+      {hasSourceRanges && (
         <>
           {Array.from({ length: sourceLanes.laneCount }, (_, lane) => (
             <div
@@ -288,8 +287,8 @@ export default function Scrubber(props: Props): JSX.Element {
               className={classes.sourceRangesLane}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
-                const fraction = (e.clientX - rect.left) / rect.width;
-                onChange(Math.max(0, Math.min(1, fraction)));
+                const clickFraction = (e.clientX - rect.left) / rect.width;
+                onChange(Math.max(0, Math.min(1, clickFraction)));
               }}
             >
               {sourceRanges.map((sr, i) => {

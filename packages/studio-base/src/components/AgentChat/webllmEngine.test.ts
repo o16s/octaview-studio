@@ -2,27 +2,38 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+import {
+  initWebLLMEngine,
+  getWebLLMStatus,
+  subscribeWebLLMStatus,
+  resetWebLLMEngine,
+  unloadWebLLMEngine,
+} from "./webllmEngine";
+
 jest.mock("@mlc-ai/web-llm", () => {
   const engines = new Map<string, { unload: jest.Mock }>();
 
   return {
-    CreateMLCEngine: jest.fn(async (modelId: string, opts?: { initProgressCallback?: (progress: { text: string; progress: number }) => void }) => {
-      // Simulate progress callback
-      opts?.initProgressCallback?.({ text: "Downloading...", progress: 0.5 });
-      opts?.initProgressCallback?.({ text: "Ready", progress: 1.0 });
+    CreateMLCEngine: jest.fn(
+      async (
+        modelId: string,
+        opts?: { initProgressCallback?: (progress: { text: string; progress: number }) => void },
+      ) => {
+        // Simulate progress callback
+        opts?.initProgressCallback?.({ text: "Downloading...", progress: 0.5 });
+        opts?.initProgressCallback?.({ text: "Ready", progress: 1.0 });
 
-      const engine = {
-        chat: { completions: { create: jest.fn() } },
-        unload: jest.fn(),
-      };
-      engines.set(modelId, engine);
-      return engine;
-    }),
+        const engine = {
+          chat: { completions: { create: jest.fn() } },
+          unload: jest.fn(),
+        };
+        engines.set(modelId, engine);
+        return engine;
+      },
+    ),
     _engines: engines,
   };
 });
-
-import { initWebLLMEngine, getWebLLMStatus, subscribeWebLLMStatus, resetWebLLMEngine, unloadWebLLMEngine } from "./webllmEngine";
 
 beforeEach(() => {
   resetWebLLMEngine();
@@ -96,8 +107,10 @@ describe("WebLLM engine singleton", () => {
 
     // Make CreateMLCEngine return a promise we control
     let resolveEngine!: (engine: unknown) => void;
-    const enginePromise = new Promise((resolve) => { resolveEngine = resolve; });
-    webllm.CreateMLCEngine.mockImplementationOnce(() => enginePromise);
+    const enginePromise = new Promise((resolve) => {
+      resolveEngine = resolve;
+    });
+    webllm.CreateMLCEngine.mockImplementationOnce(async () => await enginePromise);
 
     const loadPromise = initWebLLMEngine("slow-model");
 

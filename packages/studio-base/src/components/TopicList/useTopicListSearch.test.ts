@@ -66,11 +66,17 @@ describe("useTopicListSearch", () => {
       { name: "/empty", schemaName: undefined },
     ];
     const datatypes: UseTopicListSearchParams["datatypes"] = new Map([
-      ["ABCD", { definitions: [{ name: "x", type: "float64" }, { name: "y", type: "float64" }] }],
+      [
+        "ABCD",
+        {
+          definitions: [
+            { name: "x", type: "float64" },
+            { name: "y", type: "float64" },
+          ],
+        },
+      ],
     ]);
-    const { result } = renderHook(() =>
-      useTopicListSearch({ topics, datatypes, filterText: "" }),
-    );
+    const { result } = renderHook(() => useTopicListSearch({ topics, datatypes, filterText: "" }));
     const fields = result.current.fieldsByTopic.get("/abc");
     expect(fields).toBeDefined();
     expect(fields!.map(itemToString)).toEqual(["/abc.x", "/abc.y"]);

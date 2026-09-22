@@ -180,7 +180,14 @@ export function TopicList(): JSX.Element {
   }, [treeItems]);
 
   const itemData = useMemo(
-    () => ({ treeItems, selectedIndexes, expandedTopics, searchResult, debouncedFilterText, toggleExpand }),
+    () => ({
+      treeItems,
+      selectedIndexes,
+      expandedTopics,
+      searchResult,
+      debouncedFilterText,
+      toggleExpand,
+    }),
     [selectedIndexes, treeItems, expandedTopics, searchResult, debouncedFilterText, toggleExpand],
   );
 

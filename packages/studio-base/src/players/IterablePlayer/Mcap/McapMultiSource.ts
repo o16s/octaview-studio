@@ -48,7 +48,7 @@ export class McapMultiSource implements IIterableSource {
         }
         return { name: decoded, folder: undefined };
       }
-      const fileName = (source as File).name ?? "unknown";
+      const fileName = (source as { name?: string }).name ?? "unknown";
       const fileSlashIdx = fileName.lastIndexOf("/");
       if (fileSlashIdx > 0) {
         return { name: fileName.slice(fileSlashIdx + 1), folder: fileName.slice(0, fileSlashIdx) };
@@ -60,7 +60,7 @@ export class McapMultiSource implements IIterableSource {
   }
 
   public async initialize(): Promise<Initalization> {
-    const results = await Promise.all(this.#sources.map((s) => s.initialize()));
+    const results = await Promise.all(this.#sources.map(async (s) => await s.initialize()));
 
     // Merge all initialization results
     let start: Time | undefined;
@@ -105,7 +105,7 @@ export class McapMultiSource implements IIterableSource {
         const existing = topicStats.get(name);
         if (existing) {
           topicStats.set(name, {
-            numMessages: (existing.numMessages ?? 0) + (stats.numMessages ?? 0),
+            numMessages: existing.numMessages + stats.numMessages,
           });
         } else {
           topicStats.set(name, { ...stats });
@@ -166,7 +166,7 @@ export class McapMultiSource implements IIterableSource {
     await Promise.all(
       iterators.map(async (iterator) => {
         const next = await iterator.next();
-        if (!next.done) {
+        if (next.done !== true) {
           heads.push({ result: next.value, iterator });
         }
       }),
@@ -187,7 +187,7 @@ export class McapMultiSource implements IIterableSource {
 
       // Advance that iterator
       const next = await entry.iterator.next();
-      if (next.done) {
+      if (next.done === true) {
         heads.splice(minIdx, 1);
       } else {
         entry.result = next.value;
@@ -204,7 +204,7 @@ export class McapMultiSource implements IIterableSource {
     };
     // Get backfill messages from all sources and keep the latest per topic
     const allMessages = await Promise.all(
-      this.#sources.map((source) => source.getBackfillMessages(mutableArgs)),
+      this.#sources.map(async (source) => await source.getBackfillMessages(mutableArgs)),
     );
 
     const latestByTopic = new Map<string, MessageEvent>();

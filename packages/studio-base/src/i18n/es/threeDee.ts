@@ -54,7 +54,7 @@ export const threeDee = {
   labelScaleHelp: "Factor de escala a aplicar a todas las etiquetas",
   meshUpAxis: "Eje superior de malla",
   meshUpAxisHelp:
-    "La dirección a usar como \"arriba\" al cargar mallas sin información de orientación (STL y OBJ)",
+    'La dirección a usar como "arriba" al cargar mallas sin información de orientación (STL y OBJ)',
   renderStats: "Estadísticas de renderizado",
   scene: "Escena",
   takeEffectAfterReboot: "Esta configuración requiere un reinicio para surtir efecto",
@@ -148,14 +148,11 @@ export const threeDee = {
   publishTypePose: "Pose (geometry_msgs/PoseStamped)",
   publishTypePoseEstimate: "Estimación de pose (geometry_msgs/PoseWithCovarianceStamped)",
   thetaDeviation: "Desviación de theta",
-  thetaDeviationHelp:
-    "La desviación estándar de theta a publicar con las estimaciones de pose",
+  thetaDeviationHelp: "La desviación estándar de theta a publicar con las estimaciones de pose",
   xDeviation: "Desviación de X",
-  xDeviationHelp:
-    "La desviación estándar de X a publicar con las estimaciones de pose",
+  xDeviationHelp: "La desviación estándar de X a publicar con las estimaciones de pose",
   yDeviation: "Desviación de Y",
-  yDeviationHelp:
-    "La desviación estándar de Y a publicar con las estimaciones de pose",
+  yDeviationHelp: "La desviación estándar de Y a publicar con las estimaciones de pose",
 
   // Elementos HUD y estados vacíos
   noImageTopicsAvailable: "No hay temas de imagen disponibles.",

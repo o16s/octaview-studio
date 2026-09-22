@@ -20,9 +20,7 @@ describe("buildEdgeHubHost", () => {
 
 describe("buildEdgeHubWebSocketUrl", () => {
   it("builds the wss url with the default port", () => {
-    expect(buildEdgeHubWebSocketUrl("192.168.1.100")).toBe(
-      "wss://192.168.1.100:8443/api/v1/ws",
-    );
+    expect(buildEdgeHubWebSocketUrl("192.168.1.100")).toBe("wss://192.168.1.100:8443/api/v1/ws");
   });
 
   it("respects an explicit port", () => {

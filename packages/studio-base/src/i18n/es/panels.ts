@@ -16,8 +16,7 @@ export const panels = {
   image: "Imagen",
   imageDescription: "Muestre imágenes anotadas.",
   indicator: "Indicador",
-  indicatorDescription:
-    "Muestre un indicador con color y/o texto basado en un valor de umbral.",
+  indicatorDescription: "Muestre un indicador con color y/o texto basado en un valor de umbral.",
   log: "Registro",
   logDescription: "Muestre registros por nodo y nivel de severidad.",
   map: "Mapa",
@@ -27,8 +26,7 @@ export const panels = {
   plot: "Gráfico",
   plotDescription: "Grafique valores numéricos a lo largo del tiempo u otros valores.",
   publish: "Publicar",
-  publishDescription:
-    "Publique mensajes a la fuente de datos (solo conexiones en vivo).",
+  publishDescription: "Publique mensajes a la fuente de datos (solo conexiones en vivo).",
   rawMessages: "Mensajes sin procesar",
   rawMessagesDescription: "Inspeccione mensajes de temas.",
   ROSDiagnosticsDetail: "Diagnósticos – Detalle (ROS)",
@@ -51,6 +49,5 @@ export const panels = {
   userScriptsDescription:
     "Escriba transformaciones de datos personalizadas en TypeScript. Anteriormente conocido como Node Playground.",
   variableSlider: "Control deslizante de variable",
-  variableSliderDescription:
-    "Actualice los valores numéricos de las variables para un diseño.",
+  variableSliderDescription: "Actualice los valores numéricos de las variables para un diseño.",
 };

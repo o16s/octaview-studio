@@ -14,14 +14,26 @@ export type WebLLMModel = {
  * See: https://github.com/mlc-ai/web-llm
  */
 export const WEBLLM_MODELS: WebLLMModel[] = [
-  { id: "Hermes-2-Pro-Mistral-7B-q4f16_1-MLC", label: "Hermes 2 Pro Mistral 7B (q4f16)", vramGB: 4.5 },
-  { id: "Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC", label: "Hermes 2 Pro Llama 3 8B (q4f16)", vramGB: 5 },
-  { id: "Hermes-2-Pro-Llama-3-8B-q4f32_1-MLC", label: "Hermes 2 Pro Llama 3 8B (q4f32)", vramGB: 5 },
+  {
+    id: "Hermes-2-Pro-Mistral-7B-q4f16_1-MLC",
+    label: "Hermes 2 Pro Mistral 7B (q4f16)",
+    vramGB: 4.5,
+  },
+  {
+    id: "Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC",
+    label: "Hermes 2 Pro Llama 3 8B (q4f16)",
+    vramGB: 5,
+  },
+  {
+    id: "Hermes-2-Pro-Llama-3-8B-q4f32_1-MLC",
+    label: "Hermes 2 Pro Llama 3 8B (q4f32)",
+    vramGB: 5,
+  },
   { id: "Hermes-3-Llama-3.1-8B-q4f16_1-MLC", label: "Hermes 3 Llama 3.1 8B (q4f16)", vramGB: 5 },
   { id: "Hermes-3-Llama-3.1-8B-q4f32_1-MLC", label: "Hermes 3 Llama 3.1 8B (q4f32)", vramGB: 6 },
 ];
 
-export const RAM_TIERS = [8, 16, 24, 64] as const;
+const RAM_TIERS = [8, 16, 24, 64] as const;
 export type RAMTier = (typeof RAM_TIERS)[number];
 
 /** Return models that fit in the VRAM budget (75% of stated RAM). */

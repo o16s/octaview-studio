@@ -54,9 +54,7 @@ describe("getImageTopics", () => {
   });
 
   it("returns empty array when no image topics exist", () => {
-    const topics = [
-      { name: "/imu/data", schemaName: "sensor_msgs/Imu" },
-    ];
+    const topics = [{ name: "/imu/data", schemaName: "sensor_msgs/Imu" }];
 
     expect(getImageTopics(topics)).toHaveLength(0);
   });

@@ -9,10 +9,7 @@ import {
   useEdgeHubConnections,
 } from "@foxglove/studio-base/dataSources/edgeHubConnectionsStore";
 import { EdgeHubCredentials } from "@foxglove/studio-base/dataSources/edgeHubCredentials";
-import {
-  EdgeHubHealth,
-  fetchEdgeHubHealth,
-} from "@foxglove/studio-base/dataSources/edgeHubHealth";
+import { EdgeHubHealth, fetchEdgeHubHealth } from "@foxglove/studio-base/dataSources/edgeHubHealth";
 
 const HEALTH_POLL_INTERVAL_MS = 10_000;
 

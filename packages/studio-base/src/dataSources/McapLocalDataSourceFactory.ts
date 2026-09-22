@@ -23,8 +23,7 @@ class McapLocalDataSourceFactory implements IDataSourceFactory {
       return;
     }
 
-    const name =
-      files.length === 1 ? files[0]!.name : files.map((f) => f.name).join(", ");
+    const name = files.length === 1 ? files[0]!.name : files.map((f) => f.name).join(", ");
 
     const source = new WorkerIterableSource({
       initWorker: () => {

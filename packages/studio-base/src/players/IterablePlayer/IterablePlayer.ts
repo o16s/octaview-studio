@@ -538,9 +538,7 @@ export class IterablePlayer implements Player {
                 .map((topic) => topic.name),
             ),
           });
-          if (this.#currentTime) {
-            this.#blockLoader.setActiveTime(this.#currentTime);
-          }
+          this.#blockLoader.setActiveTime(this.#currentTime);
         } catch (err) {
           log.error(err);
 

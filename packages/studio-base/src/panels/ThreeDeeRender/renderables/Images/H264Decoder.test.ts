@@ -68,12 +68,10 @@ describe("containsKeyframe", () => {
 
 describe("preferredHardwareAcceleration", () => {
   afterEach(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (globalThis as any).VideoDecoder;
   });
 
   it("prefers hardware when the platform supports it", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).VideoDecoder = {
       isConfigSupported: jest.fn().mockResolvedValue({ supported: true }),
     };
@@ -81,7 +79,6 @@ describe("preferredHardwareAcceleration", () => {
   });
 
   it("falls back to no-preference when hardware decode is unsupported", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).VideoDecoder = {
       isConfigSupported: jest.fn().mockResolvedValue({ supported: false }),
     };
@@ -89,7 +86,6 @@ describe("preferredHardwareAcceleration", () => {
   });
 
   it("falls back to no-preference when the support probe throws", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).VideoDecoder = {
       isConfigSupported: jest.fn().mockRejectedValue(new Error("nope")),
     };
@@ -102,7 +98,7 @@ describe("preferredHardwareAcceleration", () => {
 
   it("memoizes the probe per codec string", async () => {
     const isConfigSupported = jest.fn().mockResolvedValue({ supported: true });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     (globalThis as any).VideoDecoder = { isConfigSupported };
     await preferredHardwareAcceleration("avc1.420032");
     await preferredHardwareAcceleration("avc1.420032");

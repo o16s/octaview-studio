@@ -4,9 +4,19 @@
 
 import { MosaicNode } from "react-mosaic-component";
 
-import { Time, add as addTimes, fromSec, subtract as subtractTimes, toSec } from "@foxglove/rostime";
+import {
+  Time,
+  add as addTimes,
+  fromSec,
+  subtract as subtractTimes,
+  toSec,
+} from "@foxglove/rostime";
 import { Immutable, MessageEvent } from "@foxglove/studio";
-import { AddPanelPayload, ChangePanelLayoutPayload, SaveConfigsPayload } from "@foxglove/studio-base/context/CurrentLayoutContext/actions";
+import {
+  AddPanelPayload,
+  ChangePanelLayoutPayload,
+  SaveConfigsPayload,
+} from "@foxglove/studio-base/context/CurrentLayoutContext/actions";
 import { DataSourceArgs } from "@foxglove/studio-base/context/PlayerSelectionContext";
 import { storeDownloadedFiles } from "@foxglove/studio-base/dataSources/McapServerDataSourceFactory";
 import { RosDatatypes } from "@foxglove/studio-base/types/RosDatatypes";
@@ -34,7 +44,10 @@ export type StudioContext = {
   addPanel: (payload: AddPanelPayload) => void;
   changePanelLayout: (payload: ChangePanelLayoutPayload) => void;
   savePanelConfigs: (payload: SaveConfigsPayload) => void;
-  setCurrentLayout: (data: { layout: MosaicNode<string>; configById: Record<string, unknown> }) => void;
+  setCurrentLayout: (data: {
+    layout: MosaicNode<string>;
+    configById: Record<string, unknown>;
+  }) => void;
   seekPlayback: ((time: Time) => void) | undefined;
   selectSource: (sourceId: string, args?: DataSourceArgs) => void;
   getBlockMessages: (topic: string) => MessageEvent[];
@@ -59,14 +72,18 @@ function getFieldPaths(
   prefix: string = "",
   maxDepth: number = 4,
 ): string[] {
-  if (maxDepth <= 0) {return [];}
+  if (maxDepth <= 0) {
+    return [];
+  }
   const schema = datatypes.get(schemaName);
-  if (!schema) {return [];}
+  if (!schema) {
+    return [];
+  }
 
   const paths: string[] = [];
   for (const field of schema.definitions) {
     const fieldPath = prefix ? `${prefix}.${field.name}` : field.name;
-    if (field.isComplex) {
+    if (field.isComplex === true) {
       paths.push(...getFieldPaths(field.type, datatypes, fieldPath, maxDepth - 1));
     } else {
       paths.push(fieldPath);
@@ -135,7 +152,7 @@ export function createToolExecutor(
     },
 
     search_topics: async (args): Promise<string> => {
-      const query = (args.query as string ?? "").toLowerCase();
+      const query = ((args.query as string | undefined) ?? "").toLowerCase();
       const matches = ctx.topics.filter(
         (t) =>
           t.name.toLowerCase().includes(query) ||
@@ -159,10 +176,12 @@ export function createToolExecutor(
     },
 
     search_topic_fields: async (args): Promise<string> => {
-      const query = (args.query as string ?? "").toLowerCase();
+      const query = ((args.query as string | undefined) ?? "").toLowerCase();
       const results: Array<{ topic: string; path: string }> = [];
       for (const topic of ctx.topics) {
-        if (!topic.schemaName) {continue;}
+        if (!topic.schemaName) {
+          continue;
+        }
         const paths = getFieldPaths(topic.schemaName, ctx.datatypes);
         for (const path of paths) {
           if (path.toLowerCase().includes(query)) {
@@ -179,7 +198,7 @@ export function createToolExecutor(
 
     add_panel: async (args) => {
       const panelType = args.type as string;
-      let config = normalizeTitleField((args.config as Record<string, unknown>) ?? {});
+      let config = normalizeTitleField((args.config as Record<string, unknown> | undefined) ?? {});
       // Fix LLM putting imageTopic at top level instead of inside imageMode
       if (panelType === "Image" && "imageTopic" in config && !("imageMode" in config)) {
         const { imageTopic, ...rest } = config;
@@ -192,7 +211,7 @@ export function createToolExecutor(
 
     set_layout: async (args) => {
       const layout = args.layout as MosaicNode<string>;
-      const configs = (args.configs as Record<string, Record<string, unknown>>) ?? {};
+      const configs = (args.configs as Record<string, Record<string, unknown>> | undefined) ?? {};
 
       const existingConfigById = ctx.currentLayout.configById;
 
@@ -214,12 +233,19 @@ export function createToolExecutor(
         if (typeof node === "string") {
           return idMap.get(node) ?? node;
         }
-        const branch = node as { direction: string; first: MosaicNode<string>; second: MosaicNode<string>; splitPercentage?: number };
+        const branch = node as {
+          direction: string;
+          first: MosaicNode<string>;
+          second: MosaicNode<string>;
+          splitPercentage?: number;
+        };
         return {
           direction: branch.direction,
           first: remapLayout(branch.first),
           second: remapLayout(branch.second),
-          ...(branch.splitPercentage != undefined ? { splitPercentage: branch.splitPercentage } : {}),
+          ...(branch.splitPercentage != undefined
+            ? { splitPercentage: branch.splitPercentage }
+            : {}),
         } as MosaicNode<string>;
       }
 
@@ -239,7 +265,7 @@ export function createToolExecutor(
         }
         // Merge with existing config to preserve fields the LLM didn't include
         const existing = existingConfigById[realId];
-        if (existing && typeof existing === "object") {
+        if (existing != undefined && typeof existing === "object") {
           configById[realId] = { ...existing, ...config };
         } else {
           configById[realId] = config;
@@ -300,8 +326,12 @@ export function createToolExecutor(
       let max = -Infinity;
       for (const { value } of values) {
         sum += value;
-        if (value < min) {min = value;}
-        if (value > max) {max = value;}
+        if (value < min) {
+          min = value;
+        }
+        if (value > max) {
+          max = value;
+        }
       }
       const mean = sum / values.length;
 
@@ -357,7 +387,9 @@ export function createToolExecutor(
       const peaks: Array<{ time: number; value: number }> = [];
       for (let i = 0; i < values.length; i++) {
         const val = values[i]!.value;
-        if (val <= threshold) {continue;}
+        if (val <= threshold) {
+          continue;
+        }
         const prev = i > 0 ? values[i - 1]!.value : -Infinity;
         const next = i < values.length - 1 ? values[i + 1]!.value : -Infinity;
         if (val >= prev && val >= next) {
@@ -386,7 +418,7 @@ export function createToolExecutor(
       for (const line of lines) {
         try {
           const parsed = JSON.parse(line) as Record<string, unknown>;
-          if (parsed.file) {
+          if (parsed.file != undefined) {
             files.push(parsed.file as McapFileEntry);
           }
         } catch {
@@ -395,9 +427,17 @@ export function createToolExecutor(
       }
 
       const filtered = files.filter((f) => {
-        if (from != undefined && f.endTime < from) {return false;}
-        if (to != undefined && f.startTime > to) {return false;}
-        if (pattern && !f.path.toLowerCase().includes(pattern) && !f.filename.toLowerCase().includes(pattern)) {
+        if (from != undefined && f.endTime < from) {
+          return false;
+        }
+        if (to != undefined && f.startTime > to) {
+          return false;
+        }
+        if (
+          pattern &&
+          !f.path.toLowerCase().includes(pattern) &&
+          !f.filename.toLowerCase().includes(pattern)
+        ) {
           return false;
         }
         return true;
@@ -407,8 +447,8 @@ export function createToolExecutor(
     },
 
     load_recordings: async (args): Promise<string> => {
-      const filePaths = args.files as string[];
-      if (!filePaths || filePaths.length === 0) {
+      const filePaths = args.files as string[] | undefined;
+      if (filePaths == undefined || filePaths.length === 0) {
         return "No files specified.";
       }
 
@@ -437,11 +477,21 @@ export function createToolExecutor(
     zoom_plot: async (args): Promise<string> => {
       const panelId = args.panelId as string;
       const config: Record<string, unknown> = {};
-      if (args.minX != undefined) {config.minXValue = args.minX as number;}
-      if (args.maxX != undefined) {config.maxXValue = args.maxX as number;}
-      if (args.minY != undefined) {config.minYValue = args.minY as number;}
-      if (args.maxY != undefined) {config.maxYValue = args.maxY as number;}
-      if (args.rangeSeconds != undefined) {config.followingViewWidth = args.rangeSeconds as number;}
+      if (args.minX != undefined) {
+        config.minXValue = args.minX as number;
+      }
+      if (args.maxX != undefined) {
+        config.maxXValue = args.maxX as number;
+      }
+      if (args.minY != undefined) {
+        config.minYValue = args.minY as number;
+      }
+      if (args.maxY != undefined) {
+        config.maxYValue = args.maxY as number;
+      }
+      if (args.rangeSeconds != undefined) {
+        config.followingViewWidth = args.rangeSeconds as number;
+      }
 
       ctx.savePanelConfigs({
         configs: [{ id: panelId, config, override: false }],

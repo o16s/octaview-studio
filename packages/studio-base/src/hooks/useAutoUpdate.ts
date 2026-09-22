@@ -44,7 +44,9 @@ export function useAutoUpdate(): AutoUpdateState | undefined {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if (!updater) return;
+    if (!updater) {
+      return;
+    }
     return updater.onStatus(setStatus);
   }, [updater]);
 

@@ -17,7 +17,6 @@ import {
   MessageIteratorArgs,
 } from "@foxglove/studio-base/players/IterablePlayer/IIterableSource";
 import { estimateObjectSize } from "@foxglove/studio-base/players/messageMemoryEstimation";
-import { perfStats } from "@foxglove/studio-base/util/perfStats";
 import { normalizeTopic } from "@foxglove/studio-base/players/normalizeTopic";
 import {
   PlayerProblem,
@@ -26,6 +25,7 @@ import {
   TopicStats,
 } from "@foxglove/studio-base/players/types";
 import { RosDatatypes } from "@foxglove/studio-base/types/RosDatatypes";
+import { perfStats } from "@foxglove/studio-base/util/perfStats";
 
 const log = Logger.getLogger(__filename);
 

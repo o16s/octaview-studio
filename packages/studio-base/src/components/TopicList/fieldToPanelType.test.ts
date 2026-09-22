@@ -9,12 +9,22 @@ describe("fieldToPanelType", () => {
     expect(fieldToPanelType({ type: "bool", isLeaf: true })).toBe("StateTransitions");
   });
 
-  it.each(["int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float32", "float64", "time", "duration"])(
-    "maps numeric type %s to Plot",
-    (type) => {
-      expect(fieldToPanelType({ type, isLeaf: true })).toBe("Plot");
-    },
-  );
+  it.each([
+    "int8",
+    "uint8",
+    "int16",
+    "uint16",
+    "int32",
+    "uint32",
+    "int64",
+    "uint64",
+    "float32",
+    "float64",
+    "time",
+    "duration",
+  ])("maps numeric type %s to Plot", (type) => {
+    expect(fieldToPanelType({ type, isLeaf: true })).toBe("Plot");
+  });
 
   it("maps string to RawMessages", () => {
     expect(fieldToPanelType({ type: "string", isLeaf: true })).toBe("RawMessages");

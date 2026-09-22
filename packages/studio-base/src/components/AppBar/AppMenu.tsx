@@ -206,9 +206,7 @@ export function AppMenu(props: AppMenuProps): JSX.Element {
   }, [dialogActions.preferences, handleNestedMenuClose]);
 
   const helpItems = useMemo<AppBarMenuItem[]>(
-    () => [
-      { type: "item", key: "about", label: t("about"), onClick: onAboutClick },
-    ],
+    () => [{ type: "item", key: "about", label: t("about"), onClick: onAboutClick }],
     [onAboutClick, t],
   );
 

@@ -247,8 +247,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
 
     if (
       wasAbsent &&
-      (playerPresence === PlayerPresence.PRESENT ||
-        playerPresence === PlayerPresence.INITIALIZING)
+      (playerPresence === PlayerPresence.PRESENT || playerPresence === PlayerPresence.INITIALIZING)
     ) {
       dialogActions.dataSource.close();
     }
@@ -279,9 +278,14 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
             expandedFiles.push(...extracted);
           } catch (err) {
             log.error(err);
-            enqueueSnackbar(`Failed to extract ZIP ${file.name}: ${err instanceof Error ? err.message : String(err)}`, {
-              variant: "error",
-            });
+            enqueueSnackbar(
+              `Failed to extract ZIP ${file.name}: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+              {
+                variant: "error",
+              },
+            );
           }
         } else {
           expandedFiles.push(file);
@@ -329,7 +333,13 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
         }
       }
     },
-    [availableSources, enqueueSnackbar, installExtension, selectSource, setPendingLayoutConfirmation],
+    [
+      availableSources,
+      enqueueSnackbar,
+      installExtension,
+      selectSource,
+      setPendingLayoutConfirmation,
+    ],
   );
 
   const openHandle = useCallback(
@@ -350,9 +360,12 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
           await openFiles(extracted);
         } catch (err) {
           log.error(err);
-          enqueueSnackbar(`Failed to extract ZIP: ${err instanceof Error ? err.message : String(err)}`, {
-            variant: "error",
-          });
+          enqueueSnackbar(
+            `Failed to extract ZIP: ${err instanceof Error ? err.message : String(err)}`,
+            {
+              variant: "error",
+            },
+          );
         }
         return;
       }
@@ -391,7 +404,14 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
         selectSource(matchedSource.id, { type: "file", handle });
       }
     },
-    [availableSources, enqueueSnackbar, installExtension, openFiles, selectSource, setPendingLayoutConfirmation],
+    [
+      availableSources,
+      enqueueSnackbar,
+      installExtension,
+      openFiles,
+      selectSource,
+      setPendingLayoutConfirmation,
+    ],
   );
 
   // files the main thread told us to open
@@ -600,7 +620,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
     const MAX_LAYOUT_SIZE = 1_000_000; // 1 MB
     const abortController = new AbortController();
 
-    (async () => {
+    void (async () => {
       try {
         log.debug("Fetching layout from URL");
         const res = await fetch(parsedUrl.href, { signal: abortController.signal });
@@ -848,9 +868,7 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
             gap={1}
             className={classes.updateBannerSuccess}
           >
-            <Typography variant="body2">
-              Version {autoUpdate.status.version} is ready.
-            </Typography>
+            <Typography variant="body2">Version {autoUpdate.status.version} is ready.</Typography>
             <Typography
               variant="body2"
               sx={{ cursor: "pointer", textDecoration: "underline", fontWeight: "bold" }}
@@ -934,11 +952,7 @@ export default function Workspace(props: WorkspaceProps): JSX.Element {
       if (params.has("file")) {
         return undefined;
       }
-      if (
-        params.get("view") === "recordings" ||
-        params.has("t") ||
-        params.has("incidents")
-      ) {
+      if (params.get("view") === "recordings" || params.has("t") || params.has("incidents")) {
         return "server";
       }
     }

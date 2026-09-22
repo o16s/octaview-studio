@@ -35,9 +35,7 @@ export default function View(props: PropsWithChildren<ViewProps>): JSX.Element {
   return (
     <>
       <div className={classes.content}>{props.children}</div>
-      {footer != undefined ? (
-        footer
-      ) : (
+      {footer ?? (
         <Stack
           direction="row"
           justifyContent="space-between"

@@ -19,8 +19,8 @@ import {
 import { Immutable, MessageEvent } from "@foxglove/studio";
 import { IteratorCursor } from "@foxglove/studio-base/players/IterablePlayer/IteratorCursor";
 import PlayerProblemManager from "@foxglove/studio-base/players/PlayerProblemManager";
-import { perfStats } from "@foxglove/studio-base/util/perfStats";
 import { MessageBlock, Progress, TopicSelection } from "@foxglove/studio-base/players/types";
+import { perfStats } from "@foxglove/studio-base/util/perfStats";
 
 import { IIterableSource, MessageIteratorArgs } from "./IIterableSource";
 
@@ -440,9 +440,7 @@ export class BlockLoader {
         // block still needed (e.g. deferred topics awaiting pass 2) remains
         // outstanding. For a full fetch this is the same empty map as before.
         const remainingTopics = new Map(
-          [...(existingBlock?.needTopics ?? topics)].filter(
-            ([topic]) => !topicsToFetch.has(topic),
-          ),
+          [...(existingBlock?.needTopics ?? topics)].filter(([topic]) => !topicsToFetch.has(topic)),
         );
         this.#blocks[currentBlockId] = {
           needTopics: remainingTopics,
@@ -475,10 +473,7 @@ export class BlockLoader {
     }
     const clamped = clampTime(this.#activeTime, this.#start, this.#end);
     const offsetNs = toNanoSec(subtractTimes(clamped, this.#start));
-    return Math.min(
-      this.#blocks.length - 1,
-      Number(offsetNs / BigInt(this.#blockDurationNanos)),
-    );
+    return Math.min(this.#blocks.length - 1, Number(offsetNs / BigInt(this.#blockDurationNanos)));
   }
 
   #calculateProgress(topics: TopicSelection, currentCacheSize: number): Progress {

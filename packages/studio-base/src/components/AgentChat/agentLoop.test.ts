@@ -22,7 +22,9 @@ describe("runAgentLoop", () => {
     const tools: ToolDefinition[] = [];
 
     const provider = mockProvider([
-      { choices: [{ message: { role: "assistant", content: "Hi there!" }, finish_reason: "stop" }] },
+      {
+        choices: [{ message: { role: "assistant", content: "Hi there!" }, finish_reason: "stop" }],
+      },
     ]);
 
     const result = await runAgentLoop({
@@ -55,22 +57,24 @@ describe("runAgentLoop", () => {
 
     const provider = mockProvider([
       {
-        choices: [{
-          message: {
-            role: "assistant",
-            content: null,
-            tool_calls: [
-              { id: "call_1", function: { name: "list_topics", arguments: "{}" } },
-            ],
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: ReactNull,
+              tool_calls: [{ id: "call_1", function: { name: "list_topics", arguments: "{}" } }],
+            },
+            finish_reason: "tool_calls",
           },
-          finish_reason: "tool_calls",
-        }],
+        ],
       },
       {
-        choices: [{
-          message: { role: "assistant", content: "Here are the topics: /cam, /imu" },
-          finish_reason: "stop",
-        }],
+        choices: [
+          {
+            message: { role: "assistant", content: "Here are the topics: /cam, /imu" },
+            finish_reason: "stop",
+          },
+        ],
       },
     ]);
 
@@ -95,7 +99,9 @@ describe("runAgentLoop", () => {
   });
 
   it("throws on API error with error message from response body", async () => {
-    const provider: ChatCompletionProvider = jest.fn().mockRejectedValue(new Error("Invalid API key"));
+    const provider: ChatCompletionProvider = jest
+      .fn()
+      .mockRejectedValue(new Error("Invalid API key"));
 
     await expect(
       runAgentLoop({
@@ -111,16 +117,16 @@ describe("runAgentLoop", () => {
     // Model always returns tool calls, never stops
     const provider = mockProvider([
       {
-        choices: [{
-          message: {
-            role: "assistant",
-            content: null,
-            tool_calls: [
-              { id: "call_x", function: { name: "noop", arguments: "{}" } },
-            ],
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: ReactNull,
+              tool_calls: [{ id: "call_x", function: { name: "noop", arguments: "{}" } }],
+            },
+            finish_reason: "tool_calls",
           },
-          finish_reason: "tool_calls",
-        }],
+        ],
       },
     ]);
 
@@ -148,16 +154,21 @@ describe("runAgentLoop", () => {
   it("handles malformed tool call JSON gracefully", async () => {
     const provider = mockProvider([
       {
-        choices: [{
-          message: {
-            role: "assistant",
-            content: null,
-            tool_calls: [
-              { id: "call_bad", function: { name: "list_topics", arguments: "not valid json{{{" } },
-            ],
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: ReactNull,
+              tool_calls: [
+                {
+                  id: "call_bad",
+                  function: { name: "list_topics", arguments: "not valid json{{{" },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
           },
-          finish_reason: "tool_calls",
-        }],
+        ],
       },
     ]);
 
@@ -175,9 +186,7 @@ describe("runAgentLoop", () => {
   });
 
   it("handles empty choices array gracefully", async () => {
-    const provider = mockProvider([
-      { choices: [] },
-    ]);
+    const provider = mockProvider([{ choices: [] }]);
 
     const result = await runAgentLoop({
       messages: [{ role: "user", content: "test" }],

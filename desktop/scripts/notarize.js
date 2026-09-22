@@ -12,6 +12,7 @@ exports.default = async function notarizing(context) {
 
   const { APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID } = process.env;
   if (!APPLE_ID || !APPLE_APP_SPECIFIC_PASSWORD || !APPLE_TEAM_ID) {
+    // eslint-disable-next-line no-restricted-syntax -- build-script status output
     console.log("Skipping notarization: Apple credentials not set");
     return;
   }

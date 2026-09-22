@@ -7,7 +7,9 @@ import { plotableRosTypes } from "@foxglove/studio-base/panels/Plot/plotableRosT
 /** Panel types that a single message path field can be added to via one click. */
 export type FieldPanelType = "Plot" | "StateTransitions" | "RawMessages";
 
-const numericPlotTypes = new Set(plotableRosTypes.filter((type) => type !== "bool" && type !== "string"));
+const numericPlotTypes = new Set(
+  plotableRosTypes.filter((type) => type !== "bool" && type !== "string"),
+);
 
 /**
  * Given a message path field's schema type (e.g. `"float64"`, `"bool"`, `"string[]"`) and

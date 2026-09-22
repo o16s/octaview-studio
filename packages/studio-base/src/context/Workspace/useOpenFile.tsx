@@ -46,7 +46,7 @@ export function useOpenFile(
       return;
     }
 
-    let files = await Promise.all(fileHandles.map((h) => h.getFile()));
+    let files = await Promise.all(fileHandles.map(async (h) => await h.getFile()));
 
     // Extract ZIP files, replacing them with their contents
     const expanded: File[] = [];

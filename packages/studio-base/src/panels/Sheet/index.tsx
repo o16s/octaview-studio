@@ -124,7 +124,10 @@ function SheetPanel({ config, saveConfig }: Props): JSX.Element {
     () =>
       highlightRowIndex == undefined || !loaded
         ? undefined
-        : { topic: loaded.topic, rows: [{ rowIndex: highlightRowIndex, color: PLAYBACK_HIGHLIGHT }] },
+        : {
+            topic: loaded.topic,
+            rows: [{ rowIndex: highlightRowIndex, color: PLAYBACK_HIGHLIGHT }],
+          },
     [highlightRowIndex, loaded],
   );
 

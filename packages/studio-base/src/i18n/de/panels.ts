@@ -26,8 +26,7 @@ export const panels = {
   plot: "Diagramm",
   plotDescription: "Numerische Werte über die Zeit oder andere Werte darstellen.",
   publish: "Veröffentlichen",
-  publishDescription:
-    "Nachrichten an die Datenquelle senden (nur bei Live-Verbindungen).",
+  publishDescription: "Nachrichten an die Datenquelle senden (nur bei Live-Verbindungen).",
   rawMessages: "Rohnachrichten",
   rawMessagesDescription: "Topic-Nachrichten untersuchen.",
   ROSDiagnosticsDetail: "Diagnose – Detail (ROS)",

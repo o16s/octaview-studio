@@ -507,7 +507,14 @@ export function Plot(props: Props): JSX.Element {
     return (
       <>
         {wallClockLabel != undefined && (
-          <div style={{ fontFamily: "monospace", marginBottom: 4, borderBottom: "1px solid currentColor", paddingBottom: 4 }}>
+          <div
+            style={{
+              fontFamily: "monospace",
+              marginBottom: 4,
+              borderBottom: "1px solid currentColor",
+              paddingBottom: 4,
+            }}
+          >
             {wallClockLabel}
           </div>
         )}
@@ -524,7 +531,15 @@ export function Plot(props: Props): JSX.Element {
         ))}
       </>
     );
-  }, [activeTooltip, colorsByDatasetIndex, labelsByDatasetIndex, numSeries, activeAnnotationLabels, xAxisMode, startTime]);
+  }, [
+    activeTooltip,
+    colorsByDatasetIndex,
+    labelsByDatasetIndex,
+    numSeries,
+    activeAnnotationLabels,
+    xAxisMode,
+    startTime,
+  ]);
 
   // panning
   useEffect(() => {

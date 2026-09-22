@@ -162,7 +162,9 @@ describe("createToolExecutor", () => {
     // All IDs should be unique
     expect(new Set(allIds).size).toBe(4);
     // All should be Image panel type
-    allIds.forEach((id: string) => expect(id).toMatch(/^Image!/));
+    allIds.forEach((id: string) => {
+      expect(id).toMatch(/^Image!/);
+    });
 
     // Each config should have imageTopic normalized inside imageMode
     expect(call.configById[allIds[0]]).toEqual({ imageMode: { imageTopic: "/cam1" } });
@@ -289,14 +291,35 @@ describe("createToolExecutor", () => {
 
   it("read_field_values extracts nested field values from block messages", async () => {
     const messages: MessageEvent[] = [
-      { topic: "/imu/data", schemaName: "sensor_msgs/Imu", receiveTime: { sec: 10, nsec: 0 }, message: { linear_acceleration: { x: 1.5, y: 2.0, z: 9.8 } }, sizeInBytes: 100 },
-      { topic: "/imu/data", schemaName: "sensor_msgs/Imu", receiveTime: { sec: 11, nsec: 0 }, message: { linear_acceleration: { x: 1.6, y: 2.1, z: 9.7 } }, sizeInBytes: 100 },
-      { topic: "/imu/data", schemaName: "sensor_msgs/Imu", receiveTime: { sec: 12, nsec: 0 }, message: { linear_acceleration: { x: 1.7, y: 2.2, z: 9.6 } }, sizeInBytes: 100 },
+      {
+        topic: "/imu/data",
+        schemaName: "sensor_msgs/Imu",
+        receiveTime: { sec: 10, nsec: 0 },
+        message: { linear_acceleration: { x: 1.5, y: 2.0, z: 9.8 } },
+        sizeInBytes: 100,
+      },
+      {
+        topic: "/imu/data",
+        schemaName: "sensor_msgs/Imu",
+        receiveTime: { sec: 11, nsec: 0 },
+        message: { linear_acceleration: { x: 1.6, y: 2.1, z: 9.7 } },
+        sizeInBytes: 100,
+      },
+      {
+        topic: "/imu/data",
+        schemaName: "sensor_msgs/Imu",
+        receiveTime: { sec: 12, nsec: 0 },
+        message: { linear_acceleration: { x: 1.7, y: 2.2, z: 9.6 } },
+        sizeInBytes: 100,
+      },
     ];
     const ctx = makeContext({ getBlockMessages: jest.fn().mockReturnValue(messages) });
     const execute = createToolExecutor(ctx);
 
-    const result = await execute("read_field_values", { topic: "/imu/data", field: "linear_acceleration.x" });
+    const result = await execute("read_field_values", {
+      topic: "/imu/data",
+      field: "linear_acceleration.x",
+    });
     const parsed = JSON.parse(result) as Array<{ time: number; value: number }>;
 
     expect(parsed).toHaveLength(3);
@@ -316,7 +339,11 @@ describe("createToolExecutor", () => {
     const ctx = makeContext({ getBlockMessages: jest.fn().mockReturnValue(messages) });
     const execute = createToolExecutor(ctx);
 
-    const result = await execute("read_field_values", { topic: "/sensor", field: "value", limit: 10 });
+    const result = await execute("read_field_values", {
+      topic: "/sensor",
+      field: "value",
+      limit: 10,
+    });
     const parsed = JSON.parse(result) as Array<{ time: number; value: number }>;
 
     expect(parsed.length).toBeLessThanOrEqual(10);
@@ -324,8 +351,20 @@ describe("createToolExecutor", () => {
 
   it("read_field_values returns elapsed time relative to recording start", async () => {
     const messages: MessageEvent[] = [
-      { topic: "/s", schemaName: "S", receiveTime: { sec: 1000, nsec: 0 }, message: { v: 1 }, sizeInBytes: 10 },
-      { topic: "/s", schemaName: "S", receiveTime: { sec: 1005, nsec: 0 }, message: { v: 2 }, sizeInBytes: 10 },
+      {
+        topic: "/s",
+        schemaName: "S",
+        receiveTime: { sec: 1000, nsec: 0 },
+        message: { v: 1 },
+        sizeInBytes: 10,
+      },
+      {
+        topic: "/s",
+        schemaName: "S",
+        receiveTime: { sec: 1005, nsec: 0 },
+        message: { v: 2 },
+        sizeInBytes: 10,
+      },
     ];
     const ctx = makeContext({
       getBlockMessages: jest.fn().mockReturnValue(messages),
@@ -510,9 +549,7 @@ describe("createToolExecutor", () => {
     const result = await execute("load_recordings", { files: ["data/run1.mcap"] });
 
     // Should have fetched the file
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/mcap/files/"),
-    );
+    expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining("/api/mcap/files/"));
     // Should have called selectSource
     expect(selectSource).toHaveBeenCalledTimes(1);
     expect(selectSource).toHaveBeenCalledWith("mcap-server", {
@@ -527,8 +564,18 @@ describe("createToolExecutor", () => {
   it("get_incidents returns incidents from URL parameters", async () => {
     const ctx = makeContext({
       incidents: [
-        { time: "2026-07-10T14:30:00Z", summary: "Motor overtemp", severity: "warning" as const, source: "PLC" },
-        { time: "2026-07-10T15:00:00Z", summary: "Vibration spike", severity: "critical" as const, dedup_key: "vib-1" },
+        {
+          time: "2026-07-10T14:30:00Z",
+          summary: "Motor overtemp",
+          severity: "warning" as const,
+          source: "PLC",
+        },
+        {
+          time: "2026-07-10T15:00:00Z",
+          summary: "Vibration spike",
+          severity: "critical" as const,
+          dedup_key: "vib-1",
+        },
       ],
     });
     const execute = createToolExecutor(ctx);
@@ -567,9 +614,7 @@ describe("createToolExecutor", () => {
     });
     const execute = createToolExecutor(ctx);
 
-    const annotations = [
-      { startTime: 10.0, endTime: 20.0, label: "Anomaly", color: "#ff0000" },
-    ];
+    const annotations = [{ startTime: 10.0, endTime: 20.0, label: "Anomaly", color: "#ff0000" }];
     const result = await execute("annotate_plot", { panelId: "Plot!abc", annotations });
 
     expect(savePanelConfigs).toHaveBeenCalledWith({
@@ -590,7 +635,13 @@ describe("createToolExecutor", () => {
 
   it("find_peaks returns error when neither threshold nor stddev provided", async () => {
     const messages: MessageEvent[] = [
-      { topic: "/s", schemaName: "S", receiveTime: { sec: 0, nsec: 0 }, message: { v: 5 }, sizeInBytes: 10 },
+      {
+        topic: "/s",
+        schemaName: "S",
+        receiveTime: { sec: 0, nsec: 0 },
+        message: { v: 5 },
+        sizeInBytes: 10,
+      },
     ];
     const ctx = makeContext({ getBlockMessages: jest.fn().mockReturnValue(messages) });
     const execute = createToolExecutor(ctx);
@@ -601,7 +652,9 @@ describe("createToolExecutor", () => {
   });
 
   it("search_recordings returns error on HTTP failure", async () => {
-    const mockFetch = jest.fn().mockResolvedValue(new Response("", { status: 500, statusText: "Internal Server Error" }));
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValue(new Response("", { status: 500, statusText: "Internal Server Error" }));
     const ctx = makeContext();
     const execute = createToolExecutor(ctx, mockFetch);
 
@@ -611,7 +664,9 @@ describe("createToolExecutor", () => {
   });
 
   it("load_recordings returns error on download failure", async () => {
-    const mockFetch = jest.fn().mockResolvedValue(new Response("", { status: 404, statusText: "Not Found" }));
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValue(new Response("", { status: 404, statusText: "Not Found" }));
     const ctx = makeContext();
     const execute = createToolExecutor(ctx, mockFetch);
 

@@ -5,7 +5,6 @@
 import * as _ from "lodash-es";
 
 import { fromRFC3339String, toRFC3339String, Time } from "@foxglove/rostime";
-
 import { LayoutData } from "@foxglove/studio-base/context/CurrentLayoutContext/actions";
 
 export type AppURLState = {

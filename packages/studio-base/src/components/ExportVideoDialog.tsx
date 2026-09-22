@@ -30,8 +30,7 @@ import {
 } from "@foxglove/studio-base/util/videoExporter";
 
 const selectTopics = (ctx: MessagePipelineContext) => ctx.sortedTopics;
-const selectBlocks = (ctx: MessagePipelineContext) =>
-  ctx.playerState.progress?.messageCache?.blocks;
+const selectBlocks = (ctx: MessagePipelineContext) => ctx.playerState.progress.messageCache?.blocks;
 const selectSetSubscriptions = (ctx: MessagePipelineContext) => ctx.setSubscriptions;
 
 type ExportState =
@@ -53,10 +52,7 @@ export function ExportVideoDialog({
   const setSubscriptions = useMessagePipeline(selectSetSubscriptions);
 
   const imageTopics = useMemo(
-    () =>
-      getImageTopics(
-        topics.map((t) => ({ name: t.name, schemaName: t.schemaName })),
-      ),
+    () => getImageTopics(topics.map((t) => ({ name: t.name, schemaName: t.schemaName }))),
     [topics],
   );
 
@@ -81,10 +77,14 @@ export function ExportVideoDialog({
 
   const getBlockMessages = useCallback(
     (topic: string): MessageEvent[] => {
-      if (!blocks) return [];
+      if (!blocks) {
+        return [];
+      }
       const result: MessageEvent[] = [];
       for (const block of blocks) {
-        if (!block) continue;
+        if (!block) {
+          continue;
+        }
         const topicMessages = block.messagesByTopic[topic];
         if (topicMessages) {
           result.push(...topicMessages);
@@ -96,17 +96,25 @@ export function ExportVideoDialog({
   );
 
   const handleExport = useCallback(async () => {
-    if (!selectedTopic) return;
+    if (!selectedTopic) {
+      return;
+    }
 
     const topicInfo = imageTopics.find((t) => t.name === selectedTopic);
-    if (!topicInfo?.schemaName) return;
+    if (!topicInfo?.schemaName) {
+      return;
+    }
 
     setExportState({ status: "exporting", progress: { framesProcessed: 0, totalFrames: 0 } });
 
     try {
       const messages = getBlockMessages(selectedTopic);
       if (messages.length === 0) {
-        setExportState({ status: "error", message: "No image messages found for this topic. Make sure the recording is fully loaded." });
+        setExportState({
+          status: "error",
+          message:
+            "No image messages found for this topic. Make sure the recording is fully loaded.",
+        });
         return;
       }
 
@@ -139,12 +147,18 @@ export function ExportVideoDialog({
   const isExporting = exportState.status === "exporting";
 
   const selectedMessageCount = useMemo(() => {
-    if (!selectedTopic || !blocks) return 0;
+    if (!selectedTopic || !blocks) {
+      return 0;
+    }
     let count = 0;
     for (const block of blocks) {
-      if (!block) continue;
+      if (!block) {
+        continue;
+      }
       const msgs = block.messagesByTopic[selectedTopic];
-      if (msgs) count += msgs.length;
+      if (msgs) {
+        count += msgs.length;
+      }
     }
     return count;
   }, [selectedTopic, blocks]);
@@ -162,18 +176,27 @@ export function ExportVideoDialog({
             <Typography variant="body2" color="text.secondary">
               Select an image topic to export as WebM video (VP8/VP9, royalty-free):
             </Typography>
-            <List dense disablePadding sx={{ border: 1, borderColor: "divider", borderRadius: 1, maxHeight: 240, overflow: "auto" }}>
+            <List
+              dense
+              disablePadding
+              sx={{
+                border: 1,
+                borderColor: "divider",
+                borderRadius: 1,
+                maxHeight: 240,
+                overflow: "auto",
+              }}
+            >
               {imageTopics.map((topic) => (
                 <ListItemButton
                   key={topic.name}
                   selected={selectedTopic === topic.name}
-                  onClick={() => setSelectedTopic(topic.name)}
+                  onClick={() => {
+                    setSelectedTopic(topic.name);
+                  }}
                   disabled={isExporting}
                 >
-                  <ListItemText
-                    primary={topic.name}
-                    secondary={topic.schemaName}
-                  />
+                  <ListItemText primary={topic.name} secondary={topic.schemaName} />
                 </ListItemButton>
               ))}
             </List>
@@ -192,7 +215,8 @@ export function ExportVideoDialog({
                   variant={exportState.progress.totalFrames > 0 ? "determinate" : "indeterminate"}
                   value={
                     exportState.progress.totalFrames > 0
-                      ? (exportState.progress.framesProcessed / exportState.progress.totalFrames) * 100
+                      ? (exportState.progress.framesProcessed / exportState.progress.totalFrames) *
+                        100
                       : undefined
                   }
                 />
@@ -208,7 +232,8 @@ export function ExportVideoDialog({
 
             {exportState.status === "done" && (
               <Typography variant="body2" color="success.main">
-                Export complete! {exportState.filename} ({(exportState.blob.size / 1024 / 1024).toFixed(1)} MB)
+                Export complete! {exportState.filename} (
+                {(exportState.blob.size / 1024 / 1024).toFixed(1)} MB)
               </Typography>
             )}
 
@@ -232,7 +257,12 @@ export function ExportVideoDialog({
           <Button
             variant="contained"
             onClick={() => void handleExport()}
-            disabled={!selectedTopic || isExporting || imageTopics.length === 0 || selectedMessageCount === 0}
+            disabled={
+              !selectedTopic ||
+              isExporting ||
+              imageTopics.length === 0 ||
+              selectedMessageCount === 0
+            }
           >
             {isExporting ? "Exporting..." : "Export WebM"}
           </Button>

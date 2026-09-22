@@ -88,6 +88,7 @@ export function PlaybackControlsTooltipContent(params: { stamp: Time }): ReactNu
 
   switch (timeFormat) {
     case "TOD":
+    case "TOD24":
       tooltipItems.push({ type: "item", title: "Date", value: formatDate(stamp) });
       tooltipItems.push({ type: "item", title: "Time", value: formatTime(stamp) });
       break;

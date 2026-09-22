@@ -45,9 +45,7 @@ class McapServerDataSourceFactory implements IDataSourceFactory {
       const files = pendingDownloads.get(downloadId);
       pendingDownloads.delete(downloadId);
       if (files && files.length > 0) {
-        const name = files.length === 1
-          ? (files[0]!.name)
-          : `${files.length} files`;
+        const name = files.length === 1 ? files[0]!.name : `${files.length} files`;
 
         const source = new WorkerIterableSource({
           initWorker,
@@ -59,7 +57,7 @@ class McapServerDataSourceFactory implements IDataSourceFactory {
           source,
           name,
           sourceId: this.id,
-      cacheSizeBytes: args.cacheSizeBytes,
+          cacheSizeBytes: args.cacheSizeBytes,
         });
       }
     }
@@ -81,9 +79,10 @@ class McapServerDataSourceFactory implements IDataSourceFactory {
       return;
     }
 
-    const name = urls.length === 1
-      ? decodeURIComponent(urls[0]!.split("/").pop() ?? urls[0]!)
-      : `${urls.length} files`;
+    const name =
+      urls.length === 1
+        ? decodeURIComponent(urls[0]!.split("/").pop() ?? urls[0]!)
+        : `${urls.length} files`;
 
     const source = new WorkerIterableSource({
       initWorker,

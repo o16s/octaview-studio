@@ -2,8 +2,16 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import { createRemoteProvider, createWebLLMProvider, ChatCompletionProvider } from "./completionProvider";
+import {
+  createRemoteProvider,
+  createWebLLMProvider,
+  ChatCompletionProvider,
+} from "./completionProvider";
+import type { WebLLMEngine } from "./completionProvider";
 import { ChatMessage, ToolDefinition } from "./types";
+
+// Typed bridge so jest.fn()-built mocks pass strict lint at the call sites.
+const asEngine = (mock: unknown): WebLLMEngine => mock as WebLLMEngine;
 
 describe("createRemoteProvider", () => {
   const messages: ChatMessage[] = [{ role: "user", content: "Hello" }];
@@ -68,7 +76,9 @@ describe("createRemoteProvider", () => {
     const mockFetch = jest.fn().mockResolvedValue({
       ok: false,
       status: 500,
-      json: async () => { throw new Error("not json"); },
+      json: async () => {
+        throw new Error("not json");
+      },
     });
 
     const provider = createRemoteProvider(mockFetch, "https://api.openai.com/v1", "key", "gpt-4o");
@@ -89,7 +99,7 @@ describe("createWebLLMProvider", () => {
       },
     };
 
-    const provider = createWebLLMProvider(mockEngine as any);
+    const provider = createWebLLMProvider(asEngine(mockEngine));
     const messages: ChatMessage[] = [{ role: "user", content: "Hi" }];
     const tools: ToolDefinition[] = [
       { type: "function", function: { name: "test", description: "test", parameters: {} } },
@@ -113,7 +123,7 @@ describe("createWebLLMProvider", () => {
       },
     };
 
-    const provider = createWebLLMProvider(mockEngine as any);
+    const provider = createWebLLMProvider(asEngine(mockEngine));
     const messages: ChatMessage[] = [
       { role: "system", content: "You are helpful." },
       { role: "user", content: "Hi" },
@@ -141,7 +151,7 @@ describe("createWebLLMProvider", () => {
       },
     };
 
-    const provider = createWebLLMProvider(mockEngine as any);
+    const provider = createWebLLMProvider(asEngine(mockEngine));
     const messages: ChatMessage[] = [
       { role: "user", content: "Hi" },
       {
@@ -169,7 +179,7 @@ describe("createWebLLMProvider", () => {
       },
     };
 
-    const provider = createWebLLMProvider(mockEngine as any);
+    const provider = createWebLLMProvider(asEngine(mockEngine));
     const messages: ChatMessage[] = [
       { role: "system", content: "You are helpful." },
       { role: "user", content: "Hi" },
@@ -190,7 +200,7 @@ describe("createWebLLMProvider", () => {
       },
     };
 
-    const provider = createWebLLMProvider(mockEngine as any);
+    const provider = createWebLLMProvider(asEngine(mockEngine));
     await provider({ messages: [{ role: "user", content: "test" }], tools: [] });
 
     expect(mockEngine.chat.completions.create).toHaveBeenCalledWith({

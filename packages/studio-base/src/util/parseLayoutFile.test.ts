@@ -14,7 +14,13 @@ function json(obj: unknown): string {
 
 describe("parseLayoutFile", () => {
   it("parses a valid layout with configById and layout fields", async () => {
-    const layout = { configById: {}, layout: "Panel!abc", globalVariables: {}, userNodes: {}, playbackConfig: { speed: 1 } };
+    const layout = {
+      configById: {},
+      layout: "Panel!abc",
+      globalVariables: {},
+      userNodes: {},
+      playbackConfig: { speed: 1 },
+    };
     const result = await parseLayoutFile(makeFile(json(layout)));
     expect(result).toEqual(layout);
   });

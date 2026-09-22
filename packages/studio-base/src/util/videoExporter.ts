@@ -39,7 +39,9 @@ const EXPORTABLE_SCHEMAS_SET = new Set<string>(EXPORTABLE_TOPIC_SCHEMAS);
 
 /** Filter topics to only those with exportable image/video schemas. */
 export function getImageTopics(topics: TopicInfo[]): TopicInfo[] {
-  return topics.filter((t) => t.schemaName != undefined && EXPORTABLE_SCHEMAS_SET.has(t.schemaName));
+  return topics.filter(
+    (t) => t.schemaName != undefined && EXPORTABLE_SCHEMAS_SET.has(t.schemaName),
+  );
 }
 
 export type ExportVideoProgress = {
@@ -62,7 +64,10 @@ type CompressedImageMessage = {
 };
 
 function isCompressedImage(schemaName: string): boolean {
-  return schemaName.includes("CompressedImage") || (schemaName.includes("Compressed") && !schemaName.includes("Video"));
+  return (
+    schemaName.includes("CompressedImage") ||
+    (schemaName.includes("Compressed") && !schemaName.includes("Video"))
+  );
 }
 
 function isCompressedVideo(schemaName: string): boolean {
@@ -139,7 +144,9 @@ export async function exportToWebM(
         resolve(new Blob(chunks, { type: recorder.mimeType }));
       };
       recorder.onerror = (e) => {
-        reject(new Error(`MediaRecorder error: ${(e as ErrorEvent).message ?? "unknown"}`));
+        reject(
+          new Error(`MediaRecorder error: ${(e as Partial<ErrorEvent>).message ?? "unknown"}`),
+        );
       };
     });
 
@@ -147,9 +154,12 @@ export async function exportToWebM(
     recorder.start(1000);
 
     const track = stream.getVideoTracks()[0];
-    const requestFrame = track && "requestFrame" in track
-      ? () => { (track as unknown as { requestFrame: () => void }).requestFrame(); }
-      : undefined;
+    const requestFrame =
+      track && "requestFrame" in track
+        ? () => {
+            (track as unknown as { requestFrame: () => void }).requestFrame();
+          }
+        : undefined;
 
     try {
       let framesEncoded = 0;
@@ -201,11 +211,7 @@ export async function exportToWebM(
 }
 
 function getSupportedMimeType(): string {
-  const types = [
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm",
-  ];
+  const types = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
   for (const type of types) {
     if (MediaRecorder.isTypeSupported(type)) {
       return type;
@@ -232,7 +238,8 @@ async function decodeFrame(
       throw new Error("H264Decoder required for CompressedVideo");
     }
     const video = message as unknown as CompressedVideoMessage;
-    const data = video.data instanceof Uint8Array ? video.data : new Uint8Array(video.data as ArrayBuffer);
+    const data =
+      video.data instanceof Uint8Array ? video.data : new Uint8Array(video.data as ArrayBuffer);
     const timestampNanos =
       BigInt(video.timestamp.sec) * 1_000_000_000n + BigInt(video.timestamp.nsec);
     const bitmap = await videoDecoder.decode(data, timestampNanos);
@@ -334,13 +341,18 @@ function decodeRawToRGBA(raw: RawImageMessage): Uint8ClampedArray {
 }
 
 function estimateFps(messages: MessageEvent[]): number {
-  if (messages.length < 2) return 10;
+  if (messages.length < 2) {
+    return 10;
+  }
   const first = messages[0]!;
   const last = messages[messages.length - 1]!;
   const durationSec =
-    last.receiveTime.sec - first.receiveTime.sec +
+    last.receiveTime.sec -
+    first.receiveTime.sec +
     (last.receiveTime.nsec - first.receiveTime.nsec) / 1e9;
-  if (durationSec <= 0) return 10;
+  if (durationSec <= 0) {
+    return 10;
+  }
   const fps = (messages.length - 1) / durationSec;
   // Clamp to reasonable range
   return Math.max(1, Math.min(60, Math.round(fps)));

@@ -739,7 +739,7 @@ describe("BlockLoader two-phase (plot-topics-first)", () => {
       progress: async (progress) => {
         const blocks = progress.messageCache?.blocks ?? [];
         const complete = blocks.every(
-          (b) => b != undefined && b.messagesByTopic["plot"] && b.messagesByTopic["video"],
+          (b) => b?.messagesByTopic["plot"] && b.messagesByTopic["video"],
         );
         if (complete) {
           await loader.stopLoading();
@@ -775,9 +775,7 @@ describe("BlockLoader two-phase (plot-topics-first)", () => {
     await loader.startLoading({
       progress: async (progress) => {
         const blocks = progress.messageCache?.blocks ?? [];
-        const complete = blocks.every(
-          (b) => b != undefined && b.messagesByTopic["a"] && b.messagesByTopic["b"],
-        );
+        const complete = blocks.every((b) => b?.messagesByTopic["a"] && b.messagesByTopic["b"]);
         if (complete) {
           await loader.stopLoading();
         }
@@ -844,7 +842,7 @@ describe("BlockLoader two-phase (plot-topics-first)", () => {
       progress: async (progress) => {
         const blocks = progress.messageCache?.blocks ?? [];
         const complete = blocks.every(
-          (b) => b != undefined && b.messagesByTopic["plot"] && b.messagesByTopic["video"],
+          (b) => b?.messagesByTopic["plot"] && b.messagesByTopic["video"],
         );
         if (complete) {
           await loader.stopLoading();

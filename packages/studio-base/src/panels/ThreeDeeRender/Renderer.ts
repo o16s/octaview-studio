@@ -611,7 +611,7 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
         hasAddedMessageEvents = true;
       }
 
-      this.addMessageEvent(message, /* fromAllFrames */ true);
+      this.addMessageEvent(message, { fromAllFrames: true });
       lastReadMessage = message;
       if (cursor === allFrames.length - 1) {
         cursorTimeReached = message.receiveTime;
@@ -962,7 +962,11 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
     }
   }
 
-  public addMessageEvent(messageEvent: Readonly<MessageEvent>, fromAllFrames = false): void {
+  public addMessageEvent(
+    messageEvent: Readonly<MessageEvent>,
+    opts?: { fromAllFrames?: boolean },
+  ): void {
+    const fromAllFrames = opts?.fromAllFrames ?? false;
     const { message } = messageEvent;
 
     const maybeHasHeader = message as DeepPartial<{ header: Header }>;
@@ -996,8 +1000,10 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
       this.addCoordinateFrame(maybeHasFrameId.frame_id);
     }
 
-    queueMessage(messageEvent, this.topicSubscriptions.get(messageEvent.topic), fromAllFrames);
-    queueMessage(messageEvent, this.schemaSubscriptions.get(messageEvent.schemaName), fromAllFrames);
+    queueMessage(messageEvent, this.topicSubscriptions.get(messageEvent.topic), { fromAllFrames });
+    queueMessage(messageEvent, this.schemaSubscriptions.get(messageEvent.schemaName), {
+      fromAllFrames,
+    });
   }
 
   /** Match the behavior of `tf::Transformer` by stripping leading slashes from
@@ -1537,7 +1543,7 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
 function queueMessage(
   messageEvent: Readonly<MessageEvent>,
   subscriptions: RendererSubscription[] | undefined,
-  fromAllFrames = false,
+  { fromAllFrames }: { fromAllFrames: boolean },
 ): void {
   if (subscriptions) {
     for (const subscription of subscriptions) {

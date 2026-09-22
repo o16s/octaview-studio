@@ -129,8 +129,8 @@ export function sheetSourceKey(
   const src = !source
     ? "none"
     : source.kind === "urls"
-      ? source.urls.join("|")
-      : source.files.map((file) => `${file.name}:${file.size}`).join("|");
+    ? source.urls.join("|")
+    : source.files.map((file) => `${file.name}:${file.size}`).join("|");
   const hidden = hiddenTopics ? [...hiddenTopics].sort((a, b) => a.localeCompare(b)).join(" ") : "";
   return `${src}::${hidden}`;
 }

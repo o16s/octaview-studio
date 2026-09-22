@@ -12,9 +12,11 @@ import Stack from "@foxglove/studio-base/components/Stack";
 
 // Type declaration for the BarcodeDetector API (not in all TS libs)
 declare class BarcodeDetector {
-  constructor(options?: { formats?: string[] });
-  detect(source: HTMLVideoElement | HTMLCanvasElement | ImageBitmap): Promise<Array<{ rawValue: string }>>;
-  static getSupportedFormats(): Promise<string[]>;
+  public constructor(options?: { formats?: string[] });
+  public detect(
+    source: HTMLVideoElement | HTMLCanvasElement | ImageBitmap,
+  ): Promise<Array<{ rawValue: string }>>;
+  public static getSupportedFormats(): Promise<string[]>;
 }
 
 const useStyles = makeStyles()((theme) => ({
@@ -74,11 +76,11 @@ function isBarcodeDetectorAvailable(): boolean {
   return typeof globalThis !== "undefined" && "BarcodeDetector" in globalThis;
 }
 
-export function ScanQrButton({ onScan }: QrScannerProps): JSX.Element | null {
+export function ScanQrButton({ onScan }: QrScannerProps): JSX.Element | ReactNull {
   const { classes } = useStyles();
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(ReactNull);
   const streamRef = useRef<MediaStream | undefined>();
   const scanningRef = useRef(false);
 
@@ -115,7 +117,7 @@ export function ScanQrButton({ onScan }: QrScannerProps): JSX.Element | null {
       const detector = new BarcodeDetector({ formats: ["qr_code"] });
 
       const detect = async () => {
-        if (!scanningRef.current || !video || video.readyState < 2) {
+        if (!scanningRef.current || video.readyState < 2) {
           if (scanningRef.current) {
             requestAnimationFrame(() => void detect());
           }
@@ -136,6 +138,7 @@ export function ScanQrButton({ onScan }: QrScannerProps): JSX.Element | null {
           // Detection can fail on some frames — ignore and retry
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the ref can flip to false during the awaited detect() above
         if (scanningRef.current) {
           requestAnimationFrame(() => void detect());
         }
@@ -162,7 +165,7 @@ export function ScanQrButton({ onScan }: QrScannerProps): JSX.Element | null {
   }, []);
 
   if (!isBarcodeDetectorAvailable()) {
-    return null;
+    return ReactNull;
   }
 
   return (

@@ -151,27 +151,25 @@ const makeAnnotationNode = memoizeWeak(
   },
 );
 
-const makeAnnotationsNode = memoizeWeak(
-  (annotations: PlotAnnotation[]): SettingsTreeNode => {
-    const children = Object.fromEntries(
-      annotations.map((ann, index) => [`${index}`, makeAnnotationNode(ann, index)]),
-    );
-    return {
-      label: "Annotations",
-      defaultExpansionState: "collapsed",
-      children,
-      actions: [
-        {
-          type: "action",
-          id: "add-annotation",
-          label: "Add annotation",
-          display: "inline",
-          icon: "Add",
-        },
-      ],
-    };
-  },
-);
+const makeAnnotationsNode = memoizeWeak((annotations: PlotAnnotation[]): SettingsTreeNode => {
+  const children = Object.fromEntries(
+    annotations.map((ann, index) => [`${index}`, makeAnnotationNode(ann, index)]),
+  );
+  return {
+    label: "Annotations",
+    defaultExpansionState: "collapsed",
+    children,
+    actions: [
+      {
+        type: "action",
+        id: "add-annotation",
+        label: "Add annotation",
+        display: "inline",
+        icon: "Add",
+      },
+    ],
+  };
+});
 
 function buildSettingsTree(config: PlotConfig, t: TFunction<"plot">): SettingsTreeNodes {
   const maxYError =
@@ -310,12 +308,12 @@ export function usePlotPanelSettings(
         saveConfig(
           produce((draft) => {
             if (path[0] === "annotations") {
-              if (!draft.annotations) {
+              if (draft.annotations == undefined) {
                 draft.annotations = [];
               }
               if (path[2] === "visible") {
                 const idx = Number(path[1]);
-                if (draft.annotations[idx]) {
+                if (draft.annotations[idx] != undefined) {
                   draft.annotations[idx]!.enabled = value as boolean;
                 }
               } else {
@@ -368,7 +366,7 @@ export function usePlotPanelSettings(
         } else if (action.payload.id === "add-annotation") {
           saveConfig(
             produce<PlotConfig>((draft) => {
-              if (!draft.annotations) {
+              if (draft.annotations == undefined) {
                 draft.annotations = [];
               }
               draft.annotations.push({

@@ -32,11 +32,17 @@ import AgentAvatarSvg from "./agent-avatar.svg";
 import { ExecuteToolFn, runAgentLoop } from "./agentLoop";
 import { createRemoteProvider, createWebLLMProvider } from "./completionProvider";
 import { parseMarkdown } from "./parseMarkdown";
-import { initWebLLMEngine, unloadWebLLMEngine, getWebLLMStatus, subscribeWebLLMStatus, WebLLMStatus } from "./webllmEngine";
 import { buildSystemPrompt } from "./systemPrompt";
 import { TOOL_DEFINITIONS } from "./toolDefinitions";
 import { Incident, createToolExecutor, StudioContext } from "./toolExecutor";
 import { ChatMessage } from "./types";
+import {
+  initWebLLMEngine,
+  unloadWebLLMEngine,
+  getWebLLMStatus,
+  subscribeWebLLMStatus,
+  WebLLMStatus,
+} from "./webllmEngine";
 
 const useStyles = makeStyles()((theme) => ({
   container: {
@@ -116,11 +122,8 @@ const useStyles = makeStyles()((theme) => ({
 const selectTopics = (ctx: MessagePipelineContext) => ctx.sortedTopics;
 const selectDatatypes = (ctx: MessagePipelineContext) => ctx.datatypes;
 const selectSeekPlayback = (ctx: MessagePipelineContext) => ctx.seekPlayback;
-const selectBlocks = (ctx: MessagePipelineContext) =>
-  ctx.playerState.progress?.messageCache?.blocks;
-const selectStartTime = (ctx: MessagePipelineContext) =>
-  ctx.playerState.activeData?.startTime;
-
+const selectBlocks = (ctx: MessagePipelineContext) => ctx.playerState.progress.messageCache?.blocks;
+const selectStartTime = (ctx: MessagePipelineContext) => ctx.playerState.activeData?.startTime;
 
 // Persist chat state across sidebar tab switches (component unmount/remount)
 let persistedMessages: ChatMessage[] = [];
@@ -131,10 +134,14 @@ export default function AgentChat(): ReactElement {
   const [messages, setMessages] = useState<ChatMessage[]>(persistedMessages);
   const [input, setInput] = useState(persistedInput);
   const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(ReactNull);
 
-  useEffect(() => { persistedMessages = messages; }, [messages]);
-  useEffect(() => { persistedInput = input; }, [input]);
+  useEffect(() => {
+    persistedMessages = messages;
+  }, [messages]);
+  useEffect(() => {
+    persistedInput = input;
+  }, [input]);
 
   const [backend] = useAppConfigurationValue<string>(AppSetting.AGENT_BACKEND);
   const [apiEndpoint] = useAppConfigurationValue<string>(AppSetting.AGENT_API_ENDPOINT);
@@ -158,15 +165,16 @@ export default function AgentChat(): ReactElement {
   const { addPanel, changePanelLayout, savePanelConfigs, setCurrentLayout, getCurrentLayoutState } =
     useCurrentLayoutActions();
 
-  const panelTypes = useMemo(
-    () => panelCatalog.getPanels().map((p) => p.type),
-    [panelCatalog],
-  );
+  const panelTypes = useMemo(() => panelCatalog.getPanels().map((p) => p.type), [panelCatalog]);
 
   const incidents = useMemo((): Incident[] => {
-    if (typeof window === "undefined") return [];
+    if (typeof window === "undefined") {
+      return [];
+    }
     const incParam = new URLSearchParams(window.location.search).get("incidents");
-    if (!incParam) return [];
+    if (!incParam) {
+      return [];
+    }
     try {
       return JSON.parse(atob(incParam)) as Incident[];
     } catch {
@@ -180,10 +188,14 @@ export default function AgentChat(): ReactElement {
 
   const getBlockMessages = useCallback(
     (topic: string): MessageEvent[] => {
-      if (!blocks) return [];
+      if (!blocks) {
+        return [];
+      }
       const result: MessageEvent[] = [];
       for (const block of blocks) {
-        if (!block) continue;
+        if (!block) {
+          continue;
+        }
         const topicMessages = block.messagesByTopic[topic];
         if (topicMessages) {
           for (const msg of topicMessages) {
@@ -210,13 +222,13 @@ export default function AgentChat(): ReactElement {
       addPanel,
       changePanelLayout,
       savePanelConfigs,
-      setCurrentLayout: (data) => {
-        const layoutState = getCurrentLayoutState();
-        const existingData = layoutState.selectedLayout?.data;
+      setCurrentLayout: (next) => {
+        const state = getCurrentLayoutState();
+        const existingData = state.selectedLayout?.data;
         setCurrentLayout({
           data: {
-            configById: data.configById as Record<string, Record<string, unknown>>,
-            layout: data.layout,
+            configById: next.configById as Record<string, Record<string, unknown>>,
+            layout: next.layout,
             globalVariables: existingData?.globalVariables ?? {},
             userNodes: existingData?.userNodes ?? {},
             playbackConfig: existingData?.playbackConfig ?? { speed: 1 },
@@ -229,7 +241,21 @@ export default function AgentChat(): ReactElement {
       incidents,
       startTime,
     };
-  }, [topics, datatypes, panelTypes, getCurrentLayoutState, addPanel, changePanelLayout, savePanelConfigs, setCurrentLayout, seekPlayback, selectSource, getBlockMessages, incidents, startTime]);
+  }, [
+    topics,
+    datatypes,
+    panelTypes,
+    getCurrentLayoutState,
+    addPanel,
+    changePanelLayout,
+    savePanelConfigs,
+    setCurrentLayout,
+    seekPlayback,
+    selectSource,
+    getBlockMessages,
+    incidents,
+    startTime,
+  ]);
 
   // Keep a ref so tool calls mid-loop always see the latest context
   const studioContextRef = useRef(studioContext);
@@ -251,11 +277,17 @@ export default function AgentChat(): ReactElement {
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
-    if (!trimmed || loading) return;
+    if (!trimmed || loading) {
+      return;
+    }
 
     const isRemote = backend !== "webllm";
-    if (isRemote && (!apiEndpoint || !apiKey || !model)) return;
-    if (!isRemote && !webllmModel) return;
+    if (isRemote && (!apiEndpoint || !apiKey || !model)) {
+      return;
+    }
+    if (!isRemote && !webllmModel) {
+      return;
+    }
 
     const userMessage: ChatMessage = { role: "user", content: trimmed };
     const systemMessage: ChatMessage = {
@@ -280,7 +312,7 @@ export default function AgentChat(): ReactElement {
       const conversationWithSystem = [systemMessage, ...updatedMessages];
       // Each tool call creates a fresh executor from the ref so it sees the latest context
       const executeTool: ExecuteToolFn = async (name, args) =>
-        createToolExecutor(studioContextRef.current)(name, args);
+        await createToolExecutor(studioContextRef.current)(name, args);
 
       const result = await runAgentLoop({
         messages: conversationWithSystem,
@@ -302,11 +334,21 @@ export default function AgentChat(): ReactElement {
       setLoading(false);
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- studioContextRef is intentionally read via ref to avoid stale closures
-  }, [input, loading, backend, apiEndpoint, apiKey, model, webllmModel, webllmCtxSize, messages, panelTypes]);
+  }, [
+    input,
+    loading,
+    backend,
+    apiEndpoint,
+    apiKey,
+    model,
+    webllmModel,
+    webllmCtxSize,
+    messages,
+    panelTypes,
+  ]);
 
   const isRemote = backend !== "webllm";
-  const configured = isRemote ? apiEndpoint && apiKey && model : !!webllmModel;
+  const configured = isRemote ? Boolean(apiEndpoint && apiKey && model) : !!webllmModel;
 
   if (!configured) {
     return (
@@ -320,9 +362,11 @@ export default function AgentChat(): ReactElement {
     );
   }
 
-  const visibleMessages = messages.filter((m) =>
-    (m.role === "user" && m.content) ||
-    (m.role === "assistant" && (m.content || m.tool_calls)),
+  const hasText = (c: string | undefined): boolean => c != undefined && c !== "";
+  const visibleMessages = messages.filter(
+    (m) =>
+      (m.role === "user" && hasText(m.content)) ||
+      (m.role === "assistant" && (hasText(m.content) || m.tool_calls != undefined)),
   );
 
   return (
@@ -330,15 +374,19 @@ export default function AgentChat(): ReactElement {
       <div className={classes.messages}>
         {visibleMessages.length === 0 && !loading && (
           <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: "center" }}>
-            Ask me to set up visualizations. For example: &quot;Show me the camera feed and a plot of
-            IMU acceleration side by side&quot;
+            Ask me to set up visualizations. For example: &quot;Show me the camera feed and a plot
+            of IMU acceleration side by side&quot;
           </Typography>
         )}
         {visibleMessages.map((msg, i) => {
           // Tool call messages: show subtle indicator
           if (msg.role === "assistant" && !msg.content && msg.tool_calls) {
             return (
-              <Typography key={i} variant="caption" sx={{ px: 1, py: 0.25, opacity: 0.45, fontSize: 11, fontStyle: "italic" }}>
+              <Typography
+                key={i}
+                variant="caption"
+                sx={{ px: 1, py: 0.25, opacity: 0.45, fontSize: 11, fontStyle: "italic" }}
+              >
                 {msg.tool_calls.map((tc) => tc.function.name).join(", ")}
               </Typography>
             );
@@ -354,7 +402,10 @@ export default function AgentChat(): ReactElement {
           ) : (
             <div
               key={i}
-              className={cx(classes.bubble, msg.role === "user" ? classes.userBubble : classes.assistantBubble)}
+              className={cx(
+                classes.bubble,
+                msg.role === "user" ? classes.userBubble : classes.assistantBubble,
+              )}
             >
               {msg.content}
             </div>
@@ -391,7 +442,9 @@ export default function AgentChat(): ReactElement {
           size="small"
           placeholder="Ask the agent..."
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -400,18 +453,23 @@ export default function AgentChat(): ReactElement {
           }}
           disabled={loading}
           InputProps={{
-            startAdornment: messages.length > 0 && !loading ? (
-              <InputAdornment position="start">
-                <Tooltip title="Clear chat">
-                  <IconButton size="small" onClick={handleClear}>
-                    <DeleteOutlineIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </InputAdornment>
-            ) : undefined,
+            startAdornment:
+              messages.length > 0 && !loading ? (
+                <InputAdornment position="start">
+                  <Tooltip title="Clear chat">
+                    <IconButton size="small" onClick={handleClear}>
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </InputAdornment>
+              ) : undefined,
             endAdornment: (
               <InputAdornment position="end">
-                <IconButton size="small" onClick={() => void handleSend()} disabled={loading || !input.trim()}>
+                <IconButton
+                  size="small"
+                  onClick={() => void handleSend()}
+                  disabled={loading || !input.trim()}
+                >
                   <SendIcon fontSize="small" />
                 </IconButton>
               </InputAdornment>

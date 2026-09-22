@@ -13,7 +13,7 @@ export type ChatCompletionResponse = {
   choices: {
     message: {
       role?: string;
-      content?: string | null;
+      content?: string | ReactNull;
       tool_calls?: Array<{
         id: string;
         function: { name: string; arguments: string };
@@ -74,9 +74,10 @@ export function createRemoteProvider(
     if (!response.ok) {
       let detail = `${response.status}`;
       try {
-        const body = await response.json();
-        if (body?.error?.message) {
-          detail = body.error.message;
+        const body = (await response.json()) as { error?: { message?: string } };
+        const message = body.error?.message;
+        if (message != undefined && message !== "") {
+          detail = message;
         }
       } catch {
         // use status code
@@ -84,7 +85,7 @@ export function createRemoteProvider(
       throw new Error(detail);
     }
 
-    return response.json() as Promise<ChatCompletionResponse>;
+    return await (response.json() as Promise<ChatCompletionResponse>);
   };
 }
 

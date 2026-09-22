@@ -89,7 +89,7 @@ function ensureReporter(): void {
   const timer = setInterval(() => {
     const report = registry.report();
     if (report) {
-      // eslint-disable-next-line no-console
+      // eslint-disable-next-line no-restricted-syntax -- [perf] lines must show at the console's default verbosity (debug is hidden)
       console.log(formatPerfLine(report));
     }
   }, REPORT_INTERVAL_MS);

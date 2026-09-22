@@ -15,7 +15,7 @@ import {
 type Mutable = Record<string, unknown>;
 
 function setServerConfig(value: unknown): void {
-  if (value === undefined) {
+  if (value == undefined) {
     delete (globalThis as Mutable).OCTAVIEW_STUDIO_SERVER;
   } else {
     (globalThis as Mutable).OCTAVIEW_STUDIO_SERVER = value;

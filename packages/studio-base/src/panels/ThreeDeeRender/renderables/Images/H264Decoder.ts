@@ -121,7 +121,9 @@ function extractCodecString(spsData: Uint8Array): string {
   const profileIdc = spsData[1]!;
   const constraintFlags = spsData[2]!;
   const levelIdc = spsData[3]!;
-  return `avc1.${profileIdc.toString(16).padStart(2, "0")}${constraintFlags.toString(16).padStart(2, "0")}${levelIdc.toString(16).padStart(2, "0")}`;
+  return `avc1.${profileIdc.toString(16).padStart(2, "0")}${constraintFlags
+    .toString(16)
+    .padStart(2, "0")}${levelIdc.toString(16).padStart(2, "0")}`;
 }
 
 /**
@@ -148,7 +150,7 @@ export class H264Decoder {
    * @returns Decoded frame as ImageBitmap, or undefined for stale frames
    * @throws NoFrameError if the data contains only parameter sets (no slice)
    */
-  async decode(
+  public async decode(
     data: Uint8Array,
     timestampNanos: bigint,
     isStale?: () => boolean,
@@ -293,7 +295,7 @@ export class H264Decoder {
     }
   }
 
-  close(): void {
+  public close(): void {
     this.#rejectAllPending("Decoder closed");
     if (this.#decoder && this.#decoder.state !== "closed") {
       this.#decoder.close();

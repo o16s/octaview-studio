@@ -33,7 +33,9 @@ describe("fetchEdgeHubHealth", () => {
   });
 
   it("returns undefined when fetch rejects (device unreachable)", async () => {
-    global.fetch = jest.fn().mockRejectedValue(new Error("network error")) as unknown as typeof fetch;
+    global.fetch = jest
+      .fn()
+      .mockRejectedValue(new Error("network error")) as unknown as typeof fetch;
     expect(await fetchEdgeHubHealth("192.168.1.100")).toBeUndefined();
   });
 

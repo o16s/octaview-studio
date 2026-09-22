@@ -60,7 +60,9 @@ export function useAddFieldToPanel({
     const currentConfig =
       getCurrentLayoutState().selectedLayout?.data?.configById[existingPanelId] ?? {};
     savePanelConfigs({
-      configs: [{ id: existingPanelId, config: appendFieldToConfig(panelType, currentConfig, fullPath) }],
+      configs: [
+        { id: existingPanelId, config: appendFieldToConfig(panelType, currentConfig, fullPath) },
+      ],
     });
   }, [existingPanelId, fullPath, getCurrentLayoutState, panelType, savePanelConfigs]);
 
