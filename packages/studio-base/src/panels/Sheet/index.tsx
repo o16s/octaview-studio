@@ -5,9 +5,9 @@
 import {
   LOG_TIME_COLUMN,
   MCAPSheet,
-  type CellValue,
   type MCAPSelection,
   type McapWorkbookSource,
+  type TopicRowsView,
 } from "@o16s/mcap-sheets";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -57,10 +57,10 @@ const nanosToTime = (nanos: bigint): Time => ({
   nsec: Number(nanos % 1_000_000_000n),
 });
 
-// The current topic's rows and a time index into them, for the playback link.
+// The current topic's rows view and a time index into it, for the playback link.
 type LoadedTopic = {
   topic: string;
-  rows: readonly Record<string, CellValue>[];
+  view: TopicRowsView;
   index: TimeRow[];
 };
 
@@ -108,12 +108,9 @@ function SheetPanel({ config, saveConfig }: Props): JSX.Element {
   // can (a) highlight/scroll to the row under the play bar, and (b) seek when a
   // row is clicked. Reset on remount (new source/topic set) via `key`.
   const [loaded, setLoaded] = useState<LoadedTopic | undefined>();
-  const handleRowsLoaded = useCallback(
-    (topic: string, rows: readonly Record<string, CellValue>[]) => {
-      setLoaded({ topic, rows, index: buildTimeIndex(rows, LOG_TIME_COLUMN) });
-    },
-    [],
-  );
+  const handleRowsLoaded = useCallback((topic: string, view: TopicRowsView) => {
+    setLoaded({ topic, view, index: buildTimeIndex(view.column(LOG_TIME_COLUMN) ?? []) });
+  }, []);
 
   // The row the play bar is currently on (latest row at or before now).
   const highlightRowIndex = useMemo(() => {
@@ -138,7 +135,7 @@ function SheetPanel({ config, saveConfig }: Props): JSX.Element {
       if (selection.cells.length !== 1 || !loaded || !seekPlayback) {
         return;
       }
-      const raw = loaded.rows[selection.cells[0]!.rowIndex]?.[LOG_TIME_COLUMN];
+      const raw = loaded.view.cell(selection.cells[0]!.rowIndex, LOG_TIME_COLUMN);
       if (typeof raw === "string" && raw.length > 0) {
         try {
           seekPlayback(nanosToTime(BigInt(raw)));

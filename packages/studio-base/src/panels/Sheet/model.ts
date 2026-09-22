@@ -47,17 +47,14 @@ export function makeBaseOpener(
 export type TimeRow = { time: bigint; rowIndex: number };
 
 /**
- * Build a time-sorted index of the rows' `timeColumn` (nanosecond strings) to
- * their original row indices, for binary-searching the row at a playback time.
- * Rows whose timestamp is missing or non-numeric are skipped.
+ * Build a time-sorted index of a topic's time column (nanosecond strings,
+ * column-major as `TopicRowsView.column` returns) to row indices, for
+ * binary-searching the row at a playback time. Rows whose timestamp is
+ * missing or non-numeric are skipped.
  */
-export function buildTimeIndex(
-  rows: readonly Record<string, CellValue>[],
-  timeColumn: string,
-): TimeRow[] {
+export function buildTimeIndex(timeValues: readonly CellValue[]): TimeRow[] {
   const entries: TimeRow[] = [];
-  rows.forEach((row, rowIndex) => {
-    const raw = row[timeColumn];
+  timeValues.forEach((raw, rowIndex) => {
     if (typeof raw === "string" && raw.length > 0) {
       try {
         entries.push({ time: BigInt(raw), rowIndex });

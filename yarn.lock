@@ -2560,7 +2560,7 @@ __metadata:
     "@mlc-ai/web-llm": ^0.2
     "@mui/icons-material": 5.15.5
     "@mui/material": 5.15.6
-    "@o16s/mcap-sheets": ^0.4.0
+    "@o16s/mcap-sheets": ^0.5.0
     "@popperjs/core": ^2.11.8
     "@protobufjs/base64": 1.1.2
     "@storybook/addon-actions": 7.6.10
@@ -3602,9 +3602,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@o16s/mcap-sheets@npm:^0.4.0":
-  version: 0.4.0
-  resolution: "@o16s/mcap-sheets@npm:0.4.0::__archiveUrl=https%3A%2F%2Fnpm.pkg.github.com%2Fdownload%2F%40o16s%2Fmcap-sheets%2F0.4.0%2F541fe670b8eb148d3815fcb8f58d0d7c912bf6a3"
+"@o16s/mcap-sheets@npm:^0.5.0":
+  version: 0.5.0
+  resolution: "@o16s/mcap-sheets@npm:0.5.0::__archiveUrl=https%3A%2F%2Fnpm.pkg.github.com%2Fdownload%2F%40o16s%2Fmcap-sheets%2F0.5.0%2Fd552f3bee1e493f238d8f04bbeff57f817823857"
   dependencies:
     "@mcap/browser": ^1.1.0
     "@mcap/core": ^2.2.2
@@ -3615,7 +3615,7 @@ __metadata:
   peerDependencies:
     react: ">=18"
     react-dom: ">=18"
-  checksum: ef602de5f003bf5c90ee1b85696e2cb3f4e88822162f6eb820d987de2a1416c16f24fbe90a4a17957c071cf61ab873dc4acda4c182ff31e6209ddcccb7a21115
+  checksum: 502195d34c776630e8f5270be2ad8ca46e73f5f22c2c9152bd56b901d76212b6678674dcc2871158afc291418734dc7be91169ea910c707bfb72287947ad0da8
   languageName: node
   linkType: hard
 

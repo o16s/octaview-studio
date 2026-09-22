@@ -12,15 +12,16 @@ import {
 } from "./model";
 
 describe("buildTimeIndex / rowIndexAtTime", () => {
-  const rows = [
-    { log_time: "300", v: 1 },
-    { log_time: "100", v: 2 }, // out of order on purpose
-    { log_time: "", v: 3 }, // missing timestamp -> skipped
-    { log_time: "200", v: 4 },
+  // The topic's log_time column, column-major (as TopicRowsView.column returns).
+  const logTimes = [
+    "300",
+    "100", // out of order on purpose
+    "", // missing timestamp -> skipped
+    "200",
   ];
 
   it("indexes rows sorted by time but keyed to their original index", () => {
-    expect(buildTimeIndex(rows, "log_time")).toEqual([
+    expect(buildTimeIndex(logTimes)).toEqual([
       { time: 100n, rowIndex: 1 },
       { time: 200n, rowIndex: 3 },
       { time: 300n, rowIndex: 0 },
@@ -28,7 +29,7 @@ describe("buildTimeIndex / rowIndexAtTime", () => {
   });
 
   it("finds the latest row at or before the target time", () => {
-    const index = buildTimeIndex(rows, "log_time");
+    const index = buildTimeIndex(logTimes);
     expect(rowIndexAtTime(index, 50n)).toBeUndefined(); // before everything
     expect(rowIndexAtTime(index, 100n)).toBe(1);
     expect(rowIndexAtTime(index, 250n)).toBe(3); // between 200 and 300 -> row at t=200
@@ -36,7 +37,7 @@ describe("buildTimeIndex / rowIndexAtTime", () => {
   });
 
   it("preserves nanosecond precision beyond Number range", () => {
-    const index = buildTimeIndex([{ log_time: "1700000000123456789" }], "log_time");
+    const index = buildTimeIndex(["1700000000123456789"]);
     expect(rowIndexAtTime(index, 1700000000123456789n)).toBe(0);
     expect(rowIndexAtTime(index, 1700000000123456788n)).toBeUndefined();
   });
