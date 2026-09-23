@@ -41,7 +41,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build web app
-        run: yarn web:build:prod
+        # Source the UI version from desktop/package.json — the same version
+        # electron-builder and the auto-updater use — so the packaged app's
+        # "version" in Settings matches the release instead of the stale root
+        # package.json dev version.
+        run: OCTAVIEW_STUDIO_VERSION="$(node -p "require('./desktop/package.json').version")" yarn web:build:prod
 
       - name: Install desktop dependencies
         working-directory: desktop

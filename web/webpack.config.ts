@@ -13,7 +13,11 @@ const params: ConfigParams = {
   contextPath: path.resolve(__dirname, "src"),
   entrypoint: "./entrypoint.tsx",
   prodSourceMap: "source-map",
-  version: packageJson.version,
+  // Desktop releases bump desktop/package.json, not this root package.json, so
+  // the packaged UI would otherwise show a frozen dev version. The desktop
+  // release workflow sets OCTAVIEW_STUDIO_VERSION from the git tag; plain
+  // web/dev builds fall back to the root package.json version.
+  version: process.env.OCTAVIEW_STUDIO_VERSION ?? packageJson.version,
 };
 
 // foxglove-depcheck-used: webpack-dev-server
