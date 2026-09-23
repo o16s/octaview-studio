@@ -28,6 +28,13 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+// Opt-in Chrome DevTools Protocol endpoint for debugging/benchmarking the
+// running app (e.g. OCTAVIEW_DEBUG_PORT=9222). CDP grants full control of the
+// app, so it is env-gated and Electron binds it to 127.0.0.1 only.
+if (process.env.OCTAVIEW_DEBUG_PORT) {
+  app.commandLine.appendSwitch("remote-debugging-port", process.env.OCTAVIEW_DEBUG_PORT);
+}
+
 // Allow self-signed certificates for local network connections (WSS to Edge Hubs, etc.)
 app.on("certificate-error", (event, _webContents, url, _error, _certificate, callback) => {
   const parsed = new URL(url);

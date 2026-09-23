@@ -89,6 +89,11 @@ function ensureReporter(): void {
   const timer = setInterval(() => {
     const report = registry.report();
     if (report) {
+      // Stash the latest snapshot for machine reads (e.g. a CDP poller reading
+      // globalThis.octaviewPerfLast via Runtime.evaluate). This avoids attaching a
+      // console listener to collect counters, which would serialize every
+      // console call on this thread and perturb the very timings being measured.
+      (globalThis as { octaviewPerfLast?: PerfReport }).octaviewPerfLast = report;
       // eslint-disable-next-line no-restricted-syntax -- [perf] lines must show at the console's default verbosity (debug is hidden)
       console.log(formatPerfLine(report));
     }
